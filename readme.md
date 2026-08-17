@@ -4,7 +4,7 @@
 
 # 新人点击下方一键极速部署/老用户直接覆盖代码升级  
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/a63414262/CF-Server-Monitor-Pro)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/BELUGA114/CF-Server-Monitor-Pro)
 
 
 
