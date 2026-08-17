@@ -2,7 +2,6 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const host = url.origin;
-    const myDomain = url.hostname;
 
     // ==========================================
     // 0. 数据库自动化热创建与无缝升级
@@ -22,8 +21,6 @@ export default {
             bandwidth TEXT DEFAULT '', traffic_limit TEXT DEFAULT '', agent_os TEXT DEFAULT 'debian'
           )
         `).run();
-
-        await env.DB.prepare(`CREATE TABLE IF NOT EXISTS peers (domain TEXT PRIMARY KEY, server_count INTEGER DEFAULT 0, total_asset REAL DEFAULT 0, version INTEGER DEFAULT 0, last_seen INTEGER DEFAULT 0)`).run();
 
         const { results: columns } = await env.DB.prepare(`PRAGMA table_info(servers)`).all();
         const existingCols = columns.map(c => c.name);
@@ -88,7 +85,7 @@ export default {
       site_title: '⚡ Server Monitor Pro', admin_title: '⚙️ 探针管理后台', theme: 'theme1', 
       custom_bg: '', custom_css: '', custom_head: '', custom_script: '', 
       is_public: 'true', show_price: 'true', show_expire: 'true', show_bw: 'true', show_tf: 'true', show_admin_btn: 'true',
-      admin_path: '/admin', asset_currency: '元', seed_nodes: '', tg_notify: 'false', tg_bot_token: '', tg_chat_id: '',
+      admin_path: '/admin', asset_currency: '元', tg_notify: 'false', tg_bot_token: '', tg_chat_id: '',
       auto_reset_traffic: 'false', report_interval: '5', ping_node_ct: 'default', ping_node_cu: 'default', ping_node_cm: 'default',
       offline_threshold: '30', alert_threshold: '120',
       enable_popup: 'false', popup_content: '<h3>📢 公告</h3><p>欢迎来到 Server Monitor Pro！<br>这是自定义弹窗内容，支持 HTML 排版。</p>'
@@ -117,12 +114,6 @@ export default {
         ];
     }
     
-    let defaultPeersStr = 'tanzhen.kejikkk.com';
-    if (cachedNodes && Array.isArray(cachedNodes.peers)) {
-        defaultPeersStr = cachedNodes.peers.map(p => p.replace('https://','').replace('http://','').replace(/\/$/,'')).join(',');
-    }
-    if (!sys.seed_nodes) sys.seed_nodes = defaultPeersStr;
-
     // 安全获取命令 (使用字符串拼接拆分敏感词，防 CF UI 编辑器直接拦截)
     const getCmds = (s) => {
         let cmd = ''; let unCmd = '';
@@ -186,7 +177,7 @@ export default {
             <span style="margin-right: 15px;">👁️ 历史总访问：<b style="color: #3b82f6;">${sys.visits_total || 0}</b> 次</span>
             <span>🔥 今日访问：<b style="color: #10b981;">${sys.visits_today || 0}</b> 次</span>
         </div>
-        Powered by <a href="https://github.com/a63414262/CF-Server-Monitor-Pro" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">CF-Server-Monitor-Pro (Gossip Edition)</a> | 
+        Powered by <a href="https://github.com/a63414262/CF-Server-Monitor-Pro" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">CF-Server-Monitor-Pro</a> |
         <a href="https://www.youtube.com/@%E7%A7%91%E6%8A%80KKK" target="_blank" style="color: #ef4444; text-decoration: none; font-weight: 600;">▶️ 小K分享频道</a>
       </div>
     `;
@@ -250,27 +241,6 @@ export default {
     `;
 
     // ==========================================
-    // 内部排行 API (/api/rank)
-    // ==========================================
-    if (request.method === 'GET' && url.pathname === '/api/rank') {
-      try {
-        const nowMs = Date.now();
-        await env.DB.prepare("DELETE FROM peers WHERE last_seen < ? AND last_seen > 0").bind(nowMs - 86400000).run();
-        const { results: rankData } = await env.DB.prepare('SELECT domain, server_count as servers, total_asset as assets, last_seen FROM peers ORDER BY total_asset DESC, server_count DESC LIMIT 100').all();
-        
-        let asset_rank = 0; let server_rank = 0; let global_servers = 0; let global_assets = 0;
-        rankData.forEach(r => { global_servers += parseInt(r.servers) || 0; global_assets += parseFloat(r.assets) || 0; });
-
-        const sortedByAsset = [...rankData].sort((a,b) => b.assets - a.assets);
-        const sortedByServer = [...rankData].sort((a,b) => b.servers - a.servers);
-        asset_rank = sortedByAsset.findIndex(r => r.domain === myDomain) + 1;
-        server_rank = sortedByServer.findIndex(r => r.domain === myDomain) + 1;
-        
-        return new Response(JSON.stringify({ list: rankData, server_rank: server_rank > 0 ? server_rank : '-', asset_rank: asset_rank > 0 ? asset_rank : '-', global_servers: global_servers, global_assets: global_assets, timestamp: nowMs }), { headers: { 'Content-Type': 'application/json' } });
-      } catch(e) { return new Response(JSON.stringify({error: true}), { status: 500 }); }
-    }
-
-    // ==========================================
     // 单个服务器详情 JSON API
     // ==========================================
     if (request.method === 'GET' && url.pathname === '/api/server') {
@@ -280,27 +250,6 @@ export default {
       const server = await env.DB.prepare('SELECT * FROM servers WHERE id = ?').bind(id).first();
       if (!server || server.is_hidden === 'true') return new Response('Not Found', { status: 404 });
       return new Response(JSON.stringify(server), { headers: { 'Content-Type': 'application/json' } });
-    }
-
-    // ==========================================
-    // 去中心化 API 接口：接收 Gossip 同步数据
-    // ==========================================
-    if (request.method === 'POST' && url.pathname === '/api/gossip') {
-      try {
-        const payload = await request.json();
-        if (!payload.domain || !payload.version) return new Response('Bad Request', {status: 400});
-        await env.DB.prepare(`
-          INSERT INTO peers (domain, server_count, total_asset, version, last_seen) VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(domain) DO UPDATE SET server_count = excluded.server_count, total_asset = excluded.total_asset, version = excluded.version, last_seen = excluded.last_seen WHERE excluded.version > peers.version
-        `).bind(payload.domain, payload.server_count || 0, payload.total_asset || 0, payload.version, Date.now()).run();
-
-        if (Array.isArray(payload.known_peers)) {
-            for (const peerDomain of payload.known_peers.slice(0, 10)) {
-                if (peerDomain !== myDomain) await env.DB.prepare('INSERT OR IGNORE INTO peers (domain, server_count, total_asset, version, last_seen) VALUES (?, 0, 0, 0, 0)').bind(peerDomain).run();
-            }
-        }
-        return new Response('Gossip Synced', {status: 200});
-      } catch (e) { return new Response('Gossip Error', {status: 500}); }
     }
 
     // ==========================================
@@ -797,10 +746,6 @@ export default {
                 <label style="font-size: 12px;">资产货币展示单位 (默认：元)</label>
                 <input type="text" id="cfg_asset_currency" value="${sys.asset_currency || '元'}" style="width: 120px; padding: 6px;">
               </div>
-              <div class="form-group" id="ranking_api_group" style="display: block; margin-left: 0px; margin-top: 10px; margin-bottom: 15px;">
-                <label style="font-size: 14px; color:#10b981; font-weight: bold;">✅ 已通过 Gossip 加入排名</label>
-                <input type="hidden" id="cfg_seed_nodes" value="still-cell-000f.a6856191801.workers.dev">
-              </div>
 
               <hr style="margin: 20px 0; border: none; border-top: 1px dashed #ccc;">
               <label style="font-size: 14px; font-weight: 600; margin-bottom: 10px; display: block; color: #e63946;">✈️ Telegram 机器人管理与告警</label>
@@ -884,7 +829,7 @@ export default {
             try {
               const res = await fetch('${sys.admin_path}/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'pull_github' }) });
               if (res.ok) {
-                alert('✅ Github 最新主题及 Peers 测速节点拉取成功！页面将自动刷新加载新主题。');
+                alert('✅ Github 最新主题及测速节点拉取成功！页面将自动刷新加载新主题。');
                 location.reload();
               } else {
                 alert('❌ 拉取失败，请检查网络或稍后重试');
@@ -935,7 +880,6 @@ export default {
                 show_admin_btn: document.getElementById('cfg_show_admin_btn').checked ? 'true' : 'false',
                 admin_path: document.getElementById('cfg_admin_path').value || '/admin',
                 asset_currency: document.getElementById('cfg_asset_currency').value || '元',
-                seed_nodes: document.getElementById('cfg_seed_nodes').value,
                 tg_notify: document.getElementById('cfg_tg_notify').value,
                 tg_bot_token: document.getElementById('cfg_tg_bot_token').value,
                 tg_chat_id: document.getElementById('cfg_tg_chat_id').value,
@@ -1638,7 +1582,7 @@ rm -f /tmp/cf_install.sh
     }
 
     // ==========================================
-    // 大盘主程序、聚合渲染及 Gossip 路由分发
+    // 大盘主程序、聚合渲染
     // ==========================================
     let { results } = await env.DB.prepare('SELECT * FROM servers').all();
 
@@ -1648,9 +1592,6 @@ rm -f /tmp/cf_install.sh
     let globalOnline = 0; let globalOffline = 0;
     let globalSpeedIn = 0; let globalSpeedOut = 0;
     let globalNetTx = 0; let globalNetRx = 0;
-    
-    let totalAssetGossip = 0; 
-    let totalServersGossip = results.length;
 
     let visibleAsset = 0; let visibleRemAsset = 0;
     let visibleServersCount = 0;
@@ -1693,8 +1634,6 @@ rm -f /tmp/cf_install.sh
             }
             remValue = expDays === -1 ? amount : (amount / cycleDays) * expDays;
         }
-        
-        totalAssetGossip += amount;
 
         if (server.is_hidden === 'true') continue;
 
@@ -2003,54 +1942,8 @@ rm -f /tmp/cf_install.sh
             INSERT INTO settings (key, value) VALUES ('visits_total', ?), ('visits_today', ?), ('visits_date', ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
         `).bind(vTotal.toString(), vToday.toString(), todayStr).run());
-
-        // ==========================================
-        // 核心 Gossip 后台触发机制
-        // ==========================================
-        const runGossip = async () => {
-           const nowMs = Date.now();
-           await env.DB.prepare("DELETE FROM peers WHERE last_seen < ? AND last_seen > 0").bind(nowMs - 86400000).run();
-
-           let seedList = sys.seed_nodes ? sys.seed_nodes.split(',').map(s => s.trim()).filter(s => s) : [defaultPeersStr];
-           
-           let { results: dbPeers } = await env.DB.prepare('SELECT domain FROM peers WHERE domain != ? ORDER BY RANDOM() LIMIT 3').bind(myDomain).all();
-           let targetDomains = dbPeers.map(p => p.domain);
-           if (targetDomains.length === 0) targetDomains = seedList;
-           
-           const { results: allPeers } = await env.DB.prepare('SELECT domain FROM peers ORDER BY RANDOM() LIMIT 10').all();
-           const known_peers = allPeers.map(p => p.domain);
-           
-           const payload = {
-               domain: myDomain,
-               server_count: totalServersGossip, 
-               total_asset: totalAssetGossip,    
-               version: nowMs,
-               known_peers: known_peers
-           };
-           
-           for (const peer of targetDomains) {
-               if (peer === myDomain) continue;
-               try {
-                   await fetch(`https://${peer}/api/gossip`, {
-                       method: 'POST',
-                       body: JSON.stringify(payload),
-                       headers: {'Content-Type': 'application/json'},
-                       cf: { cacheTtl: 0 }
-                   });
-               } catch(e) {} 
-           }
-           
-           await env.DB.prepare(`
-              INSERT INTO peers (domain, server_count, total_asset, version, last_seen) VALUES (?, ?, ?, ?, ?) 
-              ON CONFLICT(domain) DO UPDATE SET server_count=excluded.server_count, total_asset=excluded.total_asset, version=excluded.version, last_seen=excluded.last_seen
-           `).bind(myDomain, totalServersGossip, totalAssetGossip, nowMs, nowMs).run(); 
-        };
-        ctx.waitUntil(runGossip());
       }
       
-      let rankHtmlServer = `<span id="ajax-rank-server" style="font-size:12px;color:#f59e0b;font-weight:bold;margin-left:5px;" title="全网排名">(加载排名...)</span>`;
-      let rankHtmlAsset = `<span id="ajax-rank-asset" style="font-size:12px;color:#f59e0b;font-weight:bold;margin-left:5px;" title="全网排名">(加载排名...)</span>`;
-
       let filterTagsHtml = `<span class="filter-tag" data-code="all" onclick="setFilter('all')">全部 ${visibleServersCount}</span>`;
       for (const [code, count] of Object.entries(countryStats)) {
           filterTagsHtml += `<span class="filter-tag" data-code="${code.toLowerCase()}" onclick="setFilter('${code.toLowerCase()}')"><img src="https://flagcdn.com/16x12/${code.toLowerCase()}.png" alt="${code}"> ${code} ${count}</span>`;
@@ -2224,11 +2117,10 @@ rm -f /tmp/cf_install.sh
           .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
           .admin-btn { padding: 8px 16px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight:bold; }
           
-          /* 排行榜 Modal CSS */
           .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; overflow-y: auto; backdrop-filter: blur(4px); }
           .modal-content { background: white; padding: 20px; border-radius: 12px; margin: 40px auto; position: relative; max-height: 85vh; overflow-y: auto; box-sizing: border-box; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
           .theme2 .modal-content, .theme5 .modal-content, .theme4 .modal-content, .theme8 .modal-content, .theme6 .modal-content { background: #161b22; color: #c9d1d9; border: 1px solid #30363d; }
-          
+
           /* 上下两行自适应 Grid CSS */
           .g-val { font-size: 22px; font-weight: bold; color: #111; margin: 8px 0; line-height: 1.2; word-break: break-word; white-space: normal; }
           .g-label { font-size: 13px; color: #666; white-space: normal; line-height: 1.4; }
@@ -2253,7 +2145,6 @@ rm -f /tmp/cf_install.sh
             
             <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
               <div class="view-controls">
-                <button class="toggle-btn" onclick="openRankModal()">🏆 Gossip 全网排行</button>
                 <button class="toggle-btn active" id="btn-card" onclick="switchView('card')">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg> 卡片
                 </button>
@@ -2276,19 +2167,13 @@ rm -f /tmp/cf_install.sh
             <div class="stats-row top-row">
               <div class="g-item">
                 <div class="g-label">本机服务器总数</div>
-                <div class="g-val">${visibleServersCount} ${rankHtmlServer}</div>
+                <div class="g-val">${visibleServersCount}</div>
                 <div class="g-sub">在线 <span style="color:#10b981">${globalOnline}</span> | 离线 <span style="color:#ef4444">${globalOffline}</span></div>
-              </div>
-              
-              <div class="g-item" style="border-left: 3px solid #f59e0b; padding-left:15px; border-radius: 0;">
-                <div class="g-label">🌐 全网节点汇总 (Gossip)</div>
-                <div class="g-val"><span id="ajax-global-servers">0</span> 台 <button class="toggle-btn" style="display:inline-flex; font-size:12px; padding:2px 8px; margin-left:5px; vertical-align:middle;" onclick="openRankModal()">🏆 排名详情</button></div>
-                <div class="g-sub">全网总资产: <span id="ajax-global-assets">0.00</span> ${sys.asset_currency || '元'}</div>
               </div>
 
               <div class="g-item">
                 <div class="g-label">本机可见数字资产 (${sys.asset_currency || '元'})</div>
-                <div class="g-val">${visibleAsset.toFixed(2)} <span style="font-size:16px;color:#888;">总</span> | ${visibleRemAsset.toFixed(2)} <span style="font-size:16px;color:#888;">余</span> ${rankHtmlAsset}</div>
+                <div class="g-val">${visibleAsset.toFixed(2)} <span style="font-size:16px;color:#888;">总</span> | ${visibleRemAsset.toFixed(2)} <span style="font-size:16px;color:#888;">余</span></div>
               </div>
             </div>
             
@@ -2325,21 +2210,7 @@ rm -f /tmp/cf_install.sh
           <div id="view-map" class="view-panel">
             <div id="map-container"></div>
           </div>
-          
-          <div id="rankModal" class="modal">
-            <div class="modal-content" style="max-width: 800px;">
-               <h3 style="margin-top:0; color:#f59e0b;">🏆 去中心化网络 (Gossip) 资产与探针排行</h3>
-               <p style="font-size:12px; color:#888; margin-bottom:20px;">* 数据由分布在各地的 Cloudflare Workers 节点通过弱共识自主计算得出。<br>当前全网共记录互联 VPS <b id="modal-global-servers" style="color:#3b82f6;">0</b> 台，汇总资产总额 <b id="modal-global-assets" style="color:#10b981;">0</b>。</p>
-               <div class="table-responsive">
-                 <table class="custom-table">
-                   <thead><tr><th>排名</th><th>网络节点 (Domain)</th><th>VPS 数量</th><th>探针总资产</th><th>最后活跃</th></tr></thead>
-                   <tbody id="rank-tbody"><tr><td colspan="5" style="text-align:center;">加载中...</td></tr></tbody>
-                 </table>
-               </div>
-               <div style="text-align:right; margin-top:20px;"><button onclick="closeRankModal()" class="btn btn-gray" style="padding: 8px 20px;">关闭</button></div>
-            </div>
-          </div>
-          
+
           ${sys.enable_popup === 'true' ? `
           <div id="welcome-popup" class="modal" style="z-index: 9999;">
             <div class="modal-content" style="max-width: 550px; padding: 30px; text-align: center; border-radius: 16px;">
@@ -2406,74 +2277,8 @@ rm -f /tmp/cf_install.sh
               });
           }
 
-          window.latestRankList = [];
-          window.currentGlobalServers = '0';
-          window.currentGlobalAssets = '0.00';
-          let currentServerRank = '';
-          let currentAssetRank = '';
-
-          function openRankModal() {
-              document.getElementById('rankModal').style.display = 'block';
-              const list = window.latestRankList || [];
-              let html = '';
-              const nowMs = Date.now();
-              if(list.length > 0) {
-                  list.forEach((item, index) => {
-                      const isMe = item.domain === window.location.hostname;
-                      const nameLabel = isMe ? '👑 ' + item.domain + ' (本机)' : item.domain;
-                      const tdStyle = isMe ? 'font-weight:bold; color:#10b981;' : '';
-                      
-                      let activeStr = '刚刚';
-                      if (!isMe && item.last_seen) {
-                          const diffMin = Math.floor((nowMs - item.last_seen) / 60000);
-                          if (diffMin > 60) activeStr = Math.floor(diffMin/60) + '小时前';
-                          else if (diffMin > 0) activeStr = diffMin + '分钟前';
-                      }
-                      
-                      html += \`<tr><td style="\${tdStyle}">\${index + 1}</td><td style="\${tdStyle}">\${nameLabel}</td><td style="\${tdStyle}">\${item.servers} 台</td><td style="\${tdStyle}">\${parseFloat(item.assets).toFixed(2)} \${'${sys.asset_currency}'}</td><td style="\${tdStyle}">\${activeStr}</td></tr>\`;
-                  });
-              } else {
-                  html = '<tr><td colspan="5" style="text-align:center;">本地尚未拉取到其他节点的数据，系统正在后台握手互联中...</td></tr>';
-              }
-              document.getElementById('rank-tbody').innerHTML = html;
-          }
-          function closeRankModal() { document.getElementById('rankModal').style.display = 'none'; }
-
           let mapInitialized = false;
           window.currentFilter = 'all';
-
-          const fetchRank = async () => {
-              try {
-                  const res = await fetch('/api/rank');
-                  const data = await res.json();
-                  
-                  window.currentGlobalServers = data.global_servers || '0';
-                  window.currentGlobalAssets = parseFloat(data.global_assets || 0).toFixed(2);
-                  
-                  const elGs = document.getElementById('ajax-global-servers');
-                  if (elGs) elGs.innerText = window.currentGlobalServers;
-                  const elGa = document.getElementById('ajax-global-assets');
-                  if (elGa) elGa.innerText = window.currentGlobalAssets;
-                  
-                  const mGs = document.getElementById('modal-global-servers');
-                  if (mGs) mGs.innerText = window.currentGlobalServers;
-                  const mGa = document.getElementById('modal-global-assets');
-                  if (mGa) mGa.innerText = window.currentGlobalAssets + ' ' + '${sys.asset_currency}';
-
-                  if(data.server_rank !== '-') currentServerRank = '🏆 本机排第 ' + data.server_rank + ' 名';
-                  if(data.asset_rank !== '-') currentAssetRank = '🏆 本机排第 ' + data.asset_rank + ' 名';
-                  
-                  const elS = document.getElementById('ajax-rank-server');
-                  if(elS && currentServerRank) elS.innerHTML = currentServerRank;
-                  
-                  const elA = document.getElementById('ajax-rank-asset');
-                  if(elA && currentAssetRank) elA.innerHTML = currentAssetRank;
-                  
-                  window.latestRankList = data.list || [];
-              } catch(e) {}
-          };
-          fetchRank();
-          setInterval(fetchRank, 12000); 
 
           function switchView(viewName) {
             document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
@@ -2579,11 +2384,6 @@ rm -f /tmp/cf_install.sh
               document.getElementById('ajax-table').innerHTML = newDoc.getElementById('ajax-table').innerHTML;
               document.getElementById('ajax-filters').innerHTML = newDoc.getElementById('ajax-filters').innerHTML;
               document.getElementById('map-data').textContent = newDoc.getElementById('map-data').textContent;
-              
-              if (currentServerRank) { const elS = document.getElementById('ajax-rank-server'); if (elS) elS.innerHTML = currentServerRank; }
-              if (currentAssetRank) { const elA = document.getElementById('ajax-rank-asset'); if (elA) elA.innerHTML = currentAssetRank; }
-              const elGs = document.getElementById('ajax-global-servers'); if (elGs) elGs.innerText = window.currentGlobalServers;
-              const elGa = document.getElementById('ajax-global-assets'); if (elGa) elGa.innerText = window.currentGlobalAssets;
 
               drawMarkers(); applyFilter(); applySpeedAnimations();
             } catch (e) {}
