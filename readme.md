@@ -10,9 +10,15 @@
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/BELUGA114/CF-Server-Monitor-Pro)
 
-### 第二步：添加节点并挂载探针
+### 第二步：添加环境变量
 
-1. 进入后台后，在“节点列表”区域输入「节点名称」，选择对应的「系统环境」，点击 **+ 添加新服务器**。
+```env
+API_SECRET = "yourpassword"
+```
+
+### 第三步：添加节点并挂载探针
+
+1. 使用默认用户名 `Admin` 进入后台后，在“节点列表”区域输入「节点名称」，选择对应的「系统环境」，点击 **+ 添加新服务器**。
 2. 节点生成后，点击对应行的 **复制安装** 按钮。
 3. 登录你的被控端 VPS 或 Windows 服务器，粘贴命令并回车运行。
 4. 等待 5~10 秒，回到前台大盘刷新即可看到数据跳动。
