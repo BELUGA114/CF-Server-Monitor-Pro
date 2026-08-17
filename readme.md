@@ -1,12 +1,14 @@
-## 🚀 快速部署与使用
+# CF-Server-Monitor-Pro 
 
-### 第一步：一键部署到 Cloudflare
+>fork 自 [CF-Server-Monitor-Pro](https://github.com/a63414262/CF-Server-Monitor-Pro)
 
-# 新人点击下方一键极速部署/老用户直接覆盖代码升级  
+## 快速部署与使用
+
+### 第一步：部署到 Cloudflare
+
+一键部署或手动部署
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/BELUGA114/CF-Server-Monitor-Pro)
-
-
 
 ### 第二步：添加节点并挂载探针
 
@@ -16,7 +18,7 @@
 4. 等待 5~10 秒，回到前台大盘刷新即可看到数据跳动。
 
 ---
-## 📸 界面预览
+## 界面预览
 
 演示站点：https://still-cell-000f.a6856191801.workers.dev 
 
@@ -35,36 +37,35 @@
 
 ---
 
-# ⚡ CF-Server-Monitor-Pro (Serverless 探针增强版)
+# CF-Server-Monitor-Pro (Serverless 探针增强版)
 
 10台VPS以下可以使用cf版本轻量部署，10台VPS以上建议使用docker部署在免费容器northflank https://github.com/a63414262/server-monitor
 
 基于 Cloudflare Workers 和 D1 数据库构建的零成本、高定制化服务器探针大盘。
 完全白嫖 Cloudflare 的免费 Serverless 资源，无需额外部署任何服务端 VPS！支持多节点大盘展示、单节点详情图表、全平台 Agent 监控与 Telegram 机器人深度交互。
 
-## ✨ 核心特性
+## 核心特性
 
-* **🚀 纯 Serverless 架构**：后端与数据库依托 Cloudflare，全球极速访问，彻底告别服务端宕机烦恼。
-* **🚀 新增首页访客弹窗**：开启访客首次访问弹窗 (按IP和浏览器缓存控制)。
-* **🤖 Telegram 深度管理**：不仅支持节点离线/恢复告警推送，更支持通过 Telegram Bot 快捷菜单直接**添加节点、修改配置、全局设置交互**。
-* **📊 全维度高精度监控**：
-* 支持 CPU、内存、磁盘、进程数、TCP/UDP 连接数实时折线图。
+* **纯 Serverless 架构**：后端与数据库依托 Cloudflare，全球极速访问，彻底告别服务端宕机烦恼。
+* **新增首页访客弹窗**：开启访客首次访问弹窗 (按IP和浏览器缓存控制)。
+* **Telegram 深度管理**：不仅支持节点离线/恢复告警推送，更支持通过 Telegram Bot 快捷菜单直接**添加节点、修改配置、全局设置交互**。
+* **全维度高精度监控**：支持 CPU、内存、磁盘、进程数、TCP/UDP 连接数实时折线图。
 * **硬核双栈检测**：自动探测 IPv4 与 IPv6 网络连通性。
 * **三网延迟监控**：实时获取电信 (CT)、联通 (CU)、移动 (CM) 及字节核心节点的 HTTP Ping 延迟。
 * **智能流量统计**：支持总流量累计，**新增按节点设定“重置日”**，每月自动清零重新统计。
 
 
-* **💻 全平台 Agent 支持**：后台一键生成挂载命令，完美支持 **Linux (Systemd)**、**Alpine (OpenRC)** 及 **Windows (PowerShell)**。
-* **🎨 极致视效与高定制性**：
-* 卡片、表格、世界地图三种视图无缝切换，本地记忆偏好。
-* AJAX 局部无感热更新，数据跳动页面不闪烁。
-* 支持自定义背景图片、全局透明光幕风格，预留完全自定义 CSS 与 JS 脚本注入入口。
+* **全平台 Agent 支持**：后台一键生成挂载命令，完美支持 **Linux (Systemd)**、**Alpine (OpenRC)** 及 **Windows (PowerShell)**。
+>**极致视效与高定制性**：
+>* 卡片、表格、世界地图三种视图无缝切换，本地记忆偏好。
+>* AJAX 局部无感热更新，数据跳动页面不闪烁。
+>* 支持自定义背景图片、全局透明光幕风格，预留完全自定义 CSS 与 JS 脚本注入入口。
 
 
 
 ---
 
-## 🤖 Telegram 机器人配置 (可选)
+## Telegram 机器人配置 (可选)
 
 配置完成后，不仅可以接收掉线告警，还能直接在 TG 发送 `/menu` 调出可视化管理面板。
 
@@ -75,7 +76,7 @@
 
 ---
 
-## 🎨 界面高度自定义 (进阶)
+## 界面高度自定义 (进阶)
 
 后台支持极其强大的 DIY 功能，在「前端主题风格」中选择 **完全自定义 CSS (Custom Theme)**，即可解锁魔改：
 
@@ -83,7 +84,7 @@
 * **自定义 CSS 注入**：修改卡片颜色、字体、甚至隐藏指定元素。
 * **自定义 Script 注入**：支持插入纯原生 JavaScript 特效（如樱花飘落、鼠标跟随粒子等），不依赖第三方库，极速渲染。
 
-### ✨ 自定义背景图片透明主题 CSS 演示
+### 自定义背景图片透明主题 CSS 演示
 
 将以下代码填入后台的 **「自定义 CSS 代码」** 输入框中，即可实现超清壁纸与全站透明卡片效果：
 https://pic.netbian.com/uploads/allimg/250516/110318-17473645980a8c.jpg  更换成你喜欢的壁纸图片
@@ -135,7 +136,7 @@ body.theme6 {
 .theme6 td {
   color: #f8fafc !important; /* 纯净的月光白，无论背景多复杂都能一眼识别 */
   font-weight: 600 !important;
-  text-shadow: none !important; 
+  text-shadow: none !important;
 }
 
 /* 主标题微调（防止顶部标题看不清） */
@@ -167,16 +168,16 @@ body.theme6 {
 
 ```
 
-### ✨ 炫酷动态特效注入 (0 依赖纯原生)
+### 炫酷动态特效注入 (0 依赖纯原生)
 
 如果你喜欢二次元或更加生动的展示界面，可以将以下代码完全复制，并粘贴到管理后台的 **「自定义底部 Script 注入」** 输入框中。
 
 这段脚本包含了三种精美的特效，**全部由纯原生 JavaScript 和 Canvas 物理引擎手搓而成，不依赖 jQuery，不需要加载任何外部图片或库，极速渲染且永久有效！**
 
-*   🌸 **樱花飘落**：使用纯数学贝塞尔曲线动态绘制花瓣。
-*   ✨ **星光拖尾**：随鼠标移动生成的炫彩粒子跟随拖尾。
-*   ❤️ **爱心浮动**：鼠标点击页面任意位置，生成随机颜色的爱心并上浮。
-*   ❤️ **背景音乐播放**：实现网易云外链作为背景音乐自动单曲播放。https://music.163.com/song/media/outer/url?id=2614307770.mp3  id=你想替换的网易云音乐的ID即可,删除ID播放背景音乐不开启
+* **樱花飘落**：使用纯数学贝塞尔曲线动态绘制花瓣。
+* **星光拖尾**：随鼠标移动生成的炫彩粒子跟随拖尾。
+* **爱心浮动**：鼠标点击页面任意位置，生成随机颜色的爱心并上浮。
+* **背景音乐播放**：实现网易云外链作为背景音乐自动单曲播放。https://music.163.com/song/media/outer/url?id=2614307770.mp3  id=你想替换的网易云音乐的ID即可,删除ID播放背景音乐不开启
 ```html
 <audio id="bgm" autoplay loop preload="auto" style="display:none;">
     <source src="https://music.163.com/song/media/outer/url?id=2614307770.mp3" type="audio/mpeg">
@@ -191,7 +192,7 @@ window.addEventListener('click', () => {
     }
 }, { once: true });
 
-// 2. 🌸 纯原生 Canvas 樱花飘落特效
+// 2. 纯原生 Canvas 樱花飘落特效
 !function(){
   var canvas = document.createElement("canvas");
   canvas.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999997";
@@ -218,7 +219,7 @@ window.addEventListener('click', () => {
   render();
 }();
 
-// 3. ✨ 纯原生 Canvas 鼠标烟花/星光拖尾特效
+// 3. 纯原生 Canvas 鼠标烟花/星光拖尾特效
 !function(){
   var canvas = document.createElement("canvas");
   canvas.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:9999998";
@@ -244,16 +245,16 @@ window.addEventListener('click', () => {
   render();
 }();
 
-// 4. ❤️ 纯原生 DOM 鼠标点击爱心上浮特效
+// 4. 纯原生 DOM 鼠标点击爱心上浮特效
 !function(e,t,a){function n(){c(".heart{width: 10px;height: 10px;position: fixed;background: #f00;transform: rotate(45deg);-webkit-transform: rotate(45deg);-moz-transform: rotate(45deg);}.heart:after,.heart:before{content: '';width: inherit;height: inherit;background: inherit;border-radius: 50%;-webkit-border-radius: 50%;-moz-border-radius: 50%;position: fixed;}.heart:after{top: -5px;}.heart:before{left: -5px;}"),o(),r()}function r(){for(var e=0;e<d.length;e++)d[e].alpha<=0?(t.body.removeChild(d[e].el),d.splice(e,1)):(d[e].y--,d[e].scale+=.004,d[e].alpha-=.013,d[e].el.style.cssText="left:"+d[e].x+"px;top:"+d[e].y+"px;opacity:"+d[e].alpha+";transform:scale("+d[e].scale+","+d[e].scale+") rotate(45deg);background:"+d[e].color+";z-index:9999999");requestAnimationFrame(r)}function o(){var t="function"==typeof e.onclick&&e.onclick;e.onclick=function(e){t&&t(),i(e)}}function i(e){var a=t.createElement("div");a.className="heart",d.push({el:a,x:e.clientX-5,y:e.clientY-5,scale:1,alpha:1,color:s()}),t.body.appendChild(a)}function c(e){var a=t.createElement("style");a.type="text/css";try{a.appendChild(t.createTextNode(e))}catch(t){a.styleSheet.cssText=e}t.getElementsByTagName("head")[0].appendChild(a)}function s(){return"rgb("+~~(255*Math.random())+","+~~(255*Math.random())+","+~~(255*Math.random())+")"}var d=[];e.requestAnimationFrame=function(){return e.requestAnimationFrame||e.webkitRequestAnimationFrame||e.mozRequestAnimationFrame||e.oRequestAnimationFrame||e.msRequestAnimationFrame||function(e){setTimeout(e,1e3/60)}}(),n()}(window,document);
 </script>
 ```
 
-  https://imgapi.cn/api.php?fl=dongman&=4k   api接口可实现背景图片自动轮换   
+使用 `https://imgapi.cn/api.php?fl=dongman&=4k` api接口可实现背景图片自动轮换
 
 ---
 
-## 🗑️ 探针卸载指南
+## 探针卸载指南
 
 如果你需要移除某台 VPS 上的探针：
 
@@ -262,31 +263,28 @@ window.addEventListener('click', () => {
 **方式二（手动执行）**：
 
 * **Linux (Debian/Ubuntu/CentOS)**:
+
 ```bash
 systemctl stop cf-probe.service
 systemctl disable cf-probe.service
 rm -f /etc/systemd/system/cf-probe.service /usr/local/bin/cf-probe.sh
 systemctl daemon-reload
-
 ```
 
-
-
-
 * **Alpine Linux**:
-  ```bash
-  rc-service cf-probe stop
-  rc-update del cf-probe default
-  rm -f /etc/init.d/cf-probe /usr/local/bin/cf-probe.sh
 
-
+```bash
+rc-service cf-probe stop
+rc-update del cf-probe default
+rm -f /etc/init.d/cf-probe /usr/local/bin/cf-probe.sh
+```
 
 * **Windows (PowerShell 管理员模式)**:
+
 ```powershell
 Stop-ScheduledTask -TaskName CFProbeAgent -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName CFProbeAgent -Confirm:$false -ErrorAction SilentlyContinue
 Remove-Item -Path C:\ProgramData\CFProbe -Recurse -Force -ErrorAction SilentlyContinue
-
 ```
 
 
@@ -296,7 +294,7 @@ Remove-Item -Path C:\ProgramData\CFProbe -Recurse -Force -ErrorAction SilentlyCo
 
 ---
 
-## 🤝 参与贡献与协议
+## 参与贡献与协议
 
 本项目由纯 Serverless 爱好者开发，功能持续迭代中。
-如果你喜欢这个项目，欢迎提交 PR，或者给个 ⭐ **Star** 支持一下！
+如果你喜欢这个项目，欢迎提交 PR，或者给个 **Star** 支持一下！
