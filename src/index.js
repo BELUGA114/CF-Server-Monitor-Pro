@@ -44,7 +44,7 @@ export default {
         const checkNodes = await env.DB.prepare("SELECT value FROM settings WHERE key = 'cached_nodes_data'").first();
         if (!checkNodes) {
            try {
-               const res = await fetch('https://raw.githubusercontent.com/a63414262/CF-Server-Monitor-Pro/refs/heads/main/nodes.json');
+               const res = await fetch('https://raw.githubusercontent.com/BELUGA114/CF-Server-Monitor-Pro/refs/heads/main/nodes.json');
                if (res.ok) {
                    const dataText = await res.text();
                    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('cached_nodes_data', ?)").bind(dataText).run();
@@ -551,7 +551,7 @@ export default {
         }
         else if (data.action === 'pull_github') {
           try {
-            const res = await fetch('https://raw.githubusercontent.com/a63414262/CF-Server-Monitor-Pro/refs/heads/main/nodes.json');
+            const res = await fetch('https://raw.githubusercontent.com/BELUGA114/CF-Server-Monitor-Pro/refs/heads/main/nodes.json');
             if (res.ok) {
               const dataText = await res.text();
               await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('cached_nodes_data', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(dataText).run();
