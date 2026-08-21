@@ -2,6 +2,9 @@ name = "monitor"
 main = "src/index.js"
 compatibility_date = "2026-06-05"
 
+[secrets]
+required = ["API_SECRET"]
+
 # 告诉 Cloudflare 该项目需要一个 D1 数据库，绑定名称必须是 DB
 [[d1_databases]]
 binding = "DB"

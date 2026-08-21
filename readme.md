@@ -4,24 +4,54 @@
 
 ## 快速部署与使用
 
-### 第一步：部署到 Cloudflare
+本项目提供 Deploy 按钮与 Wrangler CLI 两种部署方式。两种方式都会创建或绑定名为 `DB` 的 D1 数据库，并要求设置 `API_SECRET`；该密钥同时用于后台登录和 Agent 上报
 
-一键部署或手动部署
+### 方式一：Deploy 按钮
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/BELUGA114/CF-Server-Monitor-Pro)
 
-### 第二步：添加环境变量
+1. 点击按钮并授权 Cloudflare 与 GitHub
+2. 在部署向导中确认 Worker 名称和 D1 数据库名称
+3. 在 Secret 配置中为 `API_SECRET` 输入一个随机密码
+4. 完成部署后，打开向导显示的 Worker 地址
 
-```env
-API_SECRET = "yourpassword"
+Deploy 按钮会自动预配 D1，并将密钥安全保存到你的 Cloudflare 账户
+
+### 方式二：Wrangler CLI
+
+适用于本地开发、手动发布和后续更新。先安装项目依赖并登录 Cloudflare：
+
+```bash
+npm install
+npm exec -- wrangler login
 ```
 
-### 第三步：添加节点并挂载探针
+首次部署时，设置密钥后发布 Worker：
 
-1. 使用默认用户名 `Admin` 进入后台后，在“节点列表”区域输入「节点名称」，选择对应的「系统环境」，点击 **+ 添加新服务器**。
-2. 节点生成后，点击对应行的 **复制安装** 按钮。
-3. 登录你的被控端 VPS 或 Windows 服务器，粘贴命令并回车运行。
-4. 等待 5~10 秒，回到前台大盘刷新即可看到数据跳动。
+```bash
+npm exec -- wrangler secret put API_SECRET
+npm exec -- wrangler deploy
+```
+
+`wrangler secret put` 会交互式读取密码并加密保存。之后每次更新代码只需执行：
+
+```bash
+npm exec -- wrangler deploy
+```
+
+本地调试时，在未提交的 `.dev.vars` 文件中配置：
+
+```env
+API_SECRET="本地测试密码"
+```
+
+### 添加节点并挂载探针
+
+1. 使用默认用户名 `admin` 和你设置的 `API_SECRET` 进入后台；默认后台路径为 `/admin`。
+2. 在“节点列表”区域输入「节点名称」，选择对应的「系统环境」，点击 **+ 添加新服务器**。
+3. 节点生成后，点击对应行的 **复制安装** 按钮。
+4. 登录你的被控端 VPS 或 Windows 服务器，粘贴命令并回车运行。
+5. 等待 5~10 秒，回到前台大盘刷新即可看到数据跳动。
 
 ---
 ## 界面预览
