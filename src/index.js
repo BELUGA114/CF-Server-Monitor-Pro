@@ -1794,7 +1794,7 @@ rm -f /tmp/cf_install.sh
 
             function initChart(ctxId, label1, label2, color1, color2, isSpeed = false) {
               const ctx = document.getElementById(ctxId).getContext('2d');
-              const isDark = document.body.className.includes('theme2') || document.body.className.includes('theme5') || document.body.className.includes('theme4') || document.body.className.includes('theme8') || document.body.className.includes('theme6');
+              const isDark = document.body.className.includes('theme2') || document.body.className.includes('theme5') || document.body.className.includes('theme4') || document.body.className.includes('theme8') || document.body.className.includes('theme6') || document.body.className.includes('theme15');
               const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)';
               const fontColor = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)';
               
@@ -1828,7 +1828,7 @@ rm -f /tmp/cf_install.sh
 
             function initPingChart() {
               const ctx = document.getElementById('chart-ping').getContext('2d');
-              const isDark = document.body.className.includes('theme2') || document.body.className.includes('theme5') || document.body.className.includes('theme4') || document.body.className.includes('theme8') || document.body.className.includes('theme6');
+              const isDark = document.body.className.includes('theme2') || document.body.className.includes('theme5') || document.body.className.includes('theme4') || document.body.className.includes('theme8') || document.body.className.includes('theme6') || document.body.className.includes('theme15');
               const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)';
               const fontColor = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)';
 
