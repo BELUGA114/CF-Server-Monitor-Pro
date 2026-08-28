@@ -10,3 +10,4 @@ required = ["API_SECRET"]
 binding = "DB"
 database_name = "monitor_db" # 默认数据库名称，用户可以在部署向导中新建或修改
 database_id = "" # 留空即可，一键部署时向导会自动处理
+preview_database_id = "monitor_db_local" # 仅 wrangler dev 使用；本地 D1 是 .wrangler 下的 SQLite 文件，占位值即可
