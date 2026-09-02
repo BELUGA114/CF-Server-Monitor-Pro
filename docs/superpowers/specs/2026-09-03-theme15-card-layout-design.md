@@ -66,8 +66,9 @@
 |---|---|---|
 | `.vps-card` | `flex-direction: column !important`；`padding: 16px !important` | 删掉 `flex-direction`；`position: relative`；`padding: 16px 16px 50px !important`；`font-variant-numeric: tabular-nums` |
 | `.card-left` | `width:100%`；`margin-bottom:12px`；`border-bottom` + `padding-bottom:12px` | `flex: 0 0 195px !important; width: auto !important; border: none !important; padding: 0 !important; margin: 0 !important` |
-| `.card-right` | `width:100% !important; border:none !important; padding:0 !important` | `width: auto !important; padding-left: 16px !important; border-left: 1px solid rgba(148,163,184,0.16) !important` |
+| `.card-right` | `width:100% !important; border:none !important; padding:0 !important` | `width: auto !important; border: none !important; border-left: 1px solid rgba(148,163,184,0.16) !important; padding: 0 0 0 16px !important` |
 | `.card-title` | 无 margin | 加 `margin-bottom: 8px` |
+| `.card-badges` | `margin-top: 6px` | `margin-top: 9px` |
 | `.card-meta` | `font-size:11px`；`font-family:monospace`；`display:flex; justify-content:space-between`；虚线下边框；`margin-top:10px !important` | `font-size: 11.5px !important; display: block !important; margin: 0 0 3px !important`（去 monospace、去 flex、去虚线） |
 | `.stat-group` | `position:relative; flex-direction:row; align-items:center` | 加 `flex-wrap: wrap` |
 | `.stat-header` | `flex:0 0 40px`；`color:#ccc !important` | `flex: 0 0 42px !important`；`color: #fff !important` |
@@ -79,7 +80,7 @@
 | `.ping-box` | `display: none !important` | `position: absolute; left: 16px; right: 16px; bottom: 16px; display: grid !important; grid-template-columns: repeat(4, 1fr); gap: 0 8px; margin: 0 !important; background: rgba(51,65,85,0.34) !important; border-color: rgba(148,163,184,0.16) !important` |
 | `.ping-box > span` | 无 | 新增 `white-space: nowrap` |
 | `.group-header` | `display: none !important` | `color: #f8fafc !important; border-left-color: rgba(96,165,250,0.58) !important` |
-| `.card-right > div:nth-last-child(2), :nth-last-child(1)` | `monospace`；虚线下边框；`padding-bottom:6px`；`margin-bottom:6px !important`；`margin-top:0 !important` | 只留 `font-size: 11px !important; color: #aab7cc !important`（行内已是 flex space-between，间距交回行内样式） |
+| `.card-right > div:nth-last-child(2), :nth-last-child(1)` | `monospace`；虚线下边框；`padding-bottom:6px`；`margin-bottom:6px !important`；`margin-top:0 !important` | 只留 `font-size: 11px !important; color: #aaa !important`（色值原样保留；行内已是 flex space-between，间距交回行内样式） |
 
 ### 颜色说明
 
@@ -87,6 +88,8 @@
 - `.card-right` 分栏竖线 `rgba(148,163,184,0.16)`、`.group-header` 的 `#f8fafc` 与 `rgba(96,165,250,0.58)`，均取自第 2 段已有的色值。
 - `.ping-box` 面板原本没有任何主题 15 配色（只有 `display:none`），揭开后需要定色。采用 `rgba(51,65,85,0.34)` 配 `rgba(148,163,184,0.16)`，与主题 15 的 slate 系一致；这是本次唯一新增的色值（`.34` 透明度）。
 - `.stat-subtext` 与 `.card-meta` 的颜色由第 2 段的 `#aab7cc !important` 提供，无需在第 1 段指定。
+- 右栏末两行（OS·TCP/UDP 与上下行速度）第 2 段没有覆盖，生效色是第 1 段的 `#aaa`，与 `.card-meta` 的 `#aab7cc` 略有出入。这是既存差异，本次原样保留。
+- `.vps-card` 去掉 `flex-direction: column !important` 后，左右分栏由基础样式 `.vps-card { display: flex }` 的默认 `row` 提供，无需再写 `flex-direction: row`。
 
 ### 字体处理
 
