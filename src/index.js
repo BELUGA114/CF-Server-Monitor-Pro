@@ -1891,6 +1891,13 @@ rm -f /tmp/cf_install.sh
                  </div>
                  <div style="height: 250px;"><canvas id="chart-ping"></canvas></div>
               </div>
+
+              <div class="chart-card chart-full" style="padding: 20px; border-radius: 12px; position: relative; grid-column: 1 / -1;">
+                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                   <span class="card-title" style="font-weight:bold;">三网丢包 (%)</span>
+                 </div>
+                 <div style="height: 250px;"><canvas id="chart-loss"></canvas></div>
+              </div>
             </div>
             
             ${getFooterHtml(sys)}
@@ -1944,8 +1951,8 @@ rm -f /tmp/cf_install.sh
               });
             }
 
-            function initPingChart() {
-              const ctx = document.getElementById('chart-ping').getContext('2d');
+            function initPingChart(ctxId, yMax) {
+              const ctx = document.getElementById(ctxId).getContext('2d');
               const isDark = document.body.className.includes('theme2') || document.body.className.includes('theme5') || document.body.className.includes('theme4') || document.body.className.includes('theme8') || document.body.className.includes('theme6') || document.body.className.includes('theme15');
               const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)';
               const fontColor = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)';
@@ -1966,7 +1973,7 @@ rm -f /tmp/cf_install.sh
                   plugins: { legend: { labels: { color: fontColor } } },
                   scales: {
                     x: { grid: { display: false }, ticks: { color: fontColor, maxTicksLimit: 8 } },
-                    y: { grid: { color: gridColor }, ticks: { color: fontColor }, beginAtZero: true }
+                    y: { grid: { color: gridColor }, ticks: { color: fontColor }, beginAtZero: true, max: yMax }
                   }
                 }
               });
@@ -1978,7 +1985,8 @@ rm -f /tmp/cf_install.sh
                charts.proc = initChart('chart-proc', '进程数', null, 'rgba(139, 92, 246, 1)');
                charts.net = initChart('chart-net', '下载', '上传', 'rgba(16, 185, 129, 1)', 'rgba(59, 130, 246, 1)', true);
                charts.conn = initChart('chart-conn', 'TCP', 'UDP', 'rgba(245, 158, 11, 1)', 'rgba(236, 72, 153, 1)');
-               charts.ping = initPingChart();
+               charts.ping = initPingChart('chart-ping');
+               charts.loss = initPingChart('chart-loss', 100);
                fetchData(); setInterval(fetchData, 4000);
             });
 
@@ -2012,7 +2020,7 @@ rm -f /tmp/cf_install.sh
                   document.getElementById('txt-tcp').innerText = data.tcp_conn;
                   document.getElementById('txt-udp').innerText = data.udp_conn;
 
-                  let history = { time: [], cpu: [], ram: [], proc: [], net_in: [], net_out: [], tcp: [], udp: [], ping_ct: [], ping_cu: [], ping_cm: [], ping_bd: [] };
+                  let history = { time: [], cpu: [], ram: [], proc: [], net_in: [], net_out: [], tcp: [], udp: [], ping_ct: [], ping_cu: [], ping_cm: [], ping_bd: [], loss_ct: [], loss_cu: [], loss_cm: [], loss_bd: [] };
                   try { if (data.history) history = JSON.parse(data.history); } catch(e) {}
                   
                   if (history.time && history.time.length > 0) {
@@ -2023,6 +2031,7 @@ rm -f /tmp/cf_install.sh
                      updateChart(charts.net, labels, [history.net_in, history.net_out]);
                      updateChart(charts.conn, labels, [history.tcp, history.udp]);
                      updateChart(charts.ping, labels, [history.ping_ct, history.ping_cu, history.ping_cm, history.ping_bd]);
+                     updateChart(charts.loss, labels, [history.loss_ct, history.loss_cu, history.loss_cm, history.loss_bd]);
                   }
                } catch (e) {}
             }
