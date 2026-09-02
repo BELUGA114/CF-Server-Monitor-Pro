@@ -61,6 +61,7 @@ export default {
         
         const newCols = {
           ping_ct: "TEXT DEFAULT '0'", ping_cu: "TEXT DEFAULT '0'", ping_cm: "TEXT DEFAULT '0'", ping_bd: "TEXT DEFAULT '0'",
+          loss_ct: "TEXT DEFAULT '-1'", loss_cu: "TEXT DEFAULT '-1'", loss_cm: "TEXT DEFAULT '-1'", loss_bd: "TEXT DEFAULT '-1'",
           monthly_rx: "TEXT DEFAULT '0'", monthly_tx: "TEXT DEFAULT '0'", last_rx: "TEXT DEFAULT '0'", last_tx: "TEXT DEFAULT '0'", reset_month: "TEXT DEFAULT ''",
           agent_os: "TEXT DEFAULT 'debian'",
           history: "TEXT DEFAULT '{}'",
@@ -797,10 +798,11 @@ export default {
               <div class="form-group"><label>Chat ID</label><input type="text" id="cfg_tg_chat_id" value="${sys.tg_chat_id || ''}" placeholder="如: 123456789"></div>
 
               <hr style="margin: 20px 0; border: none; border-top: 1px dashed #ccc;">
-              <label style="font-size: 14px; font-weight: 600; margin-bottom: 10px; display: block; color: #8b5cf6;">📡 三网延迟测试节点选择 (动态下发更新)</label>
+              <label style="font-size: 14px; font-weight: 600; margin-bottom: 10px; display: block; color: #8b5cf6;">📡 三网延迟与丢包测试节点选择 (动态下发更新)</label>
               <div class="form-group"><label>电信 (CT) 测速节点</label><select id="cfg_ping_node_ct">${buildOpts(pingOpts.ct, sys.ping_node_ct)}</select></div>
               <div class="form-group"><label>联通 (CU) 测速节点</label><select id="cfg_ping_node_cu">${buildOpts(pingOpts.cu, sys.ping_node_cu)}</select></div>
               <div class="form-group"><label>移动 (CM) 测速节点</label><select id="cfg_ping_node_cm">${buildOpts(pingOpts.cm, sys.ping_node_cm)}</select></div>
+              <div style="font-size: 12px; color: #888; margin-top: -4px;">丢包依赖 ICMP。少数节点不回 ICMP(如北京电信、北京联通),选中后丢包会恒显示 100%,默认节点已改为上海。</div>
             </div>
           </div>
           <button onclick="saveSettings()" class="btn btn-blue" style="padding: 10px 20px; font-size: 15px;">💾 保存全局设置</button>
@@ -1072,6 +1074,8 @@ $RX_PREV = 0; $TX_PREV = 0
 $LOOP_COUNT = 0
 $IPV4 = "0"; $IPV6 = "0"
 $PING_CT = "0"; $PING_CU = "0"; $PING_CM = "0"; $PING_BD = "0"
+$LOSS_CT = -1; $LOSS_CU = -1; $LOSS_CM = -1; $LOSS_BD = -1
+$PING_COUNT = 5
 
 function Get-HttpPing {
     param([string]$node)
@@ -1092,25 +1096,60 @@ function Get-HttpPing {
     }
 }
 
+function Get-IcmpStat {
+    param([string]$node)
+    # 返回 @(丢包百分比, 平均RTT);丢包 -1 表示无法测量,RTT -1 表示一个回包都没有
+    try {
+        $tasks = @()
+        for ($i = 0; $i -lt $PING_COUNT; $i++) {
+            $p = New-Object System.Net.NetworkInformation.Ping
+            $tasks += $p.SendPingAsync($node, 1000)
+        }
+        try { [Threading.Tasks.Task]::WaitAll($tasks, 4000) | Out-Null } catch { }
+        $done = 0; $ok = 0; $sum = 0
+        foreach ($t in $tasks) {
+            if ($t.Status -ne "RanToCompletion") { continue }
+            $done++
+            if ($t.Result.Status -eq "Success") { $ok++; $sum += $t.Result.RoundtripTime }
+        }
+        # 任务未完成(DNS 失败等)与完成但超时是两回事,前者报 -1,后者是真丢包
+        if ($done -eq 0) { return @(-1, -1) }
+        $loss = [math]::Round(($done - $ok) * 100 / $done)
+        if ($ok -eq 0) { return @($loss, -1) }
+        return @($loss, [math]::Round($sum / $ok))
+    } catch {
+        return @(-1, -1)
+    }
+}
+
 while ($true) {
     if ($LOOP_COUNT % 60 -eq 0) {
         try { $ipv4_req = (Invoke-RestMethod -Uri "https://cloudflare.com/cdn-cgi/trace" -UseBasicParsing -TimeoutSec 3); if ($ipv4_req -match "ip=") { $IPV4 = "1" } else { $IPV4 = "0" } } catch { $IPV4 = "0" }
     }
     
     if ($LOOP_COUNT % 6 -eq 0) {
-        $idx = $LOOP_COUNT % 3
-        if ($idx -eq 0) { $D_CT="bj-ct-dualstack.ip.zstaticcdn.com"; $D_CU="bj-cu-dualstack.ip.zstaticcdn.com"; $D_CM="bj-cm-dualstack.ip.zstaticcdn.com" }
-        elseif ($idx -eq 1) { $D_CT="sh-ct-dualstack.ip.zstaticcdn.com"; $D_CU="sh-cu-dualstack.ip.zstaticcdn.com"; $D_CM="sh-cm-dualstack.ip.zstaticcdn.com" }
-        else { $D_CT="gd-ct-dualstack.ip.zstaticcdn.com"; $D_CU="gd-cu-dualstack.ip.zstaticcdn.com"; $D_CM="gd-cm-dualstack.ip.zstaticcdn.com" }
+        $D_CT = "sh-ct-dualstack.ip.zstaticcdn.com"; $D_CU = "sh-cu-dualstack.ip.zstaticcdn.com"; $D_CM = "sh-cm-dualstack.ip.zstaticcdn.com"
+        $c_bd = "lf3-ips.zstaticcdn.com"
         
         $c_ct = if ($PING_NODE_CT -eq "default") { $D_CT } else { $PING_NODE_CT }
         $c_cu = if ($PING_NODE_CU -eq "default") { $D_CU } else { $PING_NODE_CU }
         $c_cm = if ($PING_NODE_CM -eq "default") { $D_CM } else { $PING_NODE_CM }
 
-        $PING_CT = Get-HttpPing $c_ct
-        $PING_CU = Get-HttpPing $c_cu
-        $PING_CM = Get-HttpPing $c_cm
-        $PING_BD = Get-HttpPing "lf3-ips.zstaticcdn.com"
+        $r = Get-IcmpStat $c_ct
+        $LOSS_CT = $r[0]
+        $PING_CT = if ($r[1] -ge 0) { $r[1] } else { Get-HttpPing $c_ct }
+
+        $r = Get-IcmpStat $c_cu
+        $LOSS_CU = $r[0]
+        $PING_CU = if ($r[1] -ge 0) { $r[1] } else { Get-HttpPing $c_cu }
+
+        $r = Get-IcmpStat $c_cm
+        $LOSS_CM = $r[0]
+        $PING_CM = if ($r[1] -ge 0) { $r[1] } else { Get-HttpPing $c_cm }
+
+        $r = Get-IcmpStat $c_bd
+        $LOSS_BD = $r[0]
+        $PING_BD = if ($r[1] -ge 0) { $r[1] } else { Get-HttpPing $c_bd }
     }
 
     $LOOP_COUNT++
@@ -1208,6 +1247,10 @@ while ($true) {
             ping_cu = "$PING_CU"
             ping_cm = "$PING_CM"
             ping_bd = "$PING_BD"
+            loss_ct = "$LOSS_CT"
+            loss_cu = "$LOSS_CU"
+            loss_cm = "$LOSS_CM"
+            loss_bd = "$LOSS_BD"
             virt = "$VIRT"
         }
     }
@@ -1290,6 +1333,22 @@ WORKER_URL="\$WORKER_URL"
 get_net_bytes() { awk 'NR>2 {rx+=\\$2; tx+=\\$10} END {printf "%.0f %.0f", rx, tx}' /proc/net/dev; }
 get_cpu_stat() { awk '/^cpu / {print \\$2+\\$3+\\$4+\\$5+\\$6+\\$7+\\$8+\\$9, \\$5+\\$6}' /proc/stat; }
 get_http_ping() { rtt=\\$(curl -o /dev/null -s -m 2 -w "%{time_total}" "http://\\$1" 2>/dev/null | awk '{printf "%.0f", \\$1*1000}'); echo "\\\${rtt:-0}"; }
+PING_COUNT=5
+ICMP_OK=0
+command -v ping >/dev/null 2>&1 && ICMP_OK=1
+# 统计文件必须放在父目录仅 root 可写的位置。放 /tmp 会被非特权用户预置符号链接,
+# root 的重定向跟随后可任意截断文件(CWE-59)
+ICMP_DIR=""
+for d in /run/cf-probe /var/lib/cf-probe; do
+  if (umask 077; mkdir -p "\\$d" 2>/dev/null); then ICMP_DIR="\\$d"; chmod 700 "\\$d" 2>/dev/null; break; fi
+done
+[ -z "\\$ICMP_DIR" ] && ICMP_OK=0
+# 四个目标并行探测,统计输出按目标后缀落文件,解析统一放在 wait 之后
+icmp_probe() { ping -c \\$PING_COUNT -w 6 -q "\\$1" > "\\$ICMP_DIR/icmp-\\$2" 2>/dev/null; }
+# 丢包百分比;输出为空表示 ICMP 不可用(命令缺失、无权限或解析失败)
+icmp_loss() { awk '/packet loss/ { for (i = 1; i <= NF; i++) if (\\$i ~ /%\\$/) { sub(/%\\$/, "", \\$i); printf "%.0f", \\$i + 0; exit } }' "\\$ICMP_DIR/icmp-\\$1" 2>/dev/null; }
+# 平均 RTT;输出为空表示一个回包都没有,此时延迟回退 HTTP 探测
+icmp_avg() { awk -F'=' '/min\\/avg\\/max/ { split(\\$2, a, "/"); printf "%.0f", a[2] + 0; exit }' "\\$ICMP_DIR/icmp-\\$1" 2>/dev/null; }
 
 NET_STAT=\\$(get_net_bytes)
 RX_PREV=\\$(echo \\$NET_STAT | awk '{print \\$1}')
@@ -1304,6 +1363,7 @@ PREV_CPU_IDLE=\\$(echo \\$CPU_STAT | awk '{print \\$2}')
 LOOP_COUNT=0
 IPV4="0"; IPV6="0"
 PING_CT="0"; PING_CU="0"; PING_CM="0"; PING_BD="0"
+LOSS_CT="-1"; LOSS_CU="-1"; LOSS_CM="-1"; LOSS_BD="-1"
 
 REPORT_INTERVAL="${cfg.reportInterval}"
 PING_NODE_CT="${cfg.pingCt}"
@@ -1317,12 +1377,8 @@ while true; do
   fi
   
   if [ \\$((LOOP_COUNT % 6)) -eq 0 ]; then
-    idx=\\$((LOOP_COUNT % 3))
-    case \\$idx in
-      0) D_CT="bj-ct-dualstack.ip.zstaticcdn.com"; D_CU="bj-cu-dualstack.ip.zstaticcdn.com"; D_CM="bj-cm-dualstack.ip.zstaticcdn.com" ;;
-      1) D_CT="sh-ct-dualstack.ip.zstaticcdn.com"; D_CU="sh-cu-dualstack.ip.zstaticcdn.com"; D_CM="sh-cm-dualstack.ip.zstaticcdn.com" ;;
-      2) D_CT="gd-ct-dualstack.ip.zstaticcdn.com"; D_CU="gd-cu-dualstack.ip.zstaticcdn.com"; D_CM="gd-cm-dualstack.ip.zstaticcdn.com" ;;
-    esac
+    D_CT="sh-ct-dualstack.ip.zstaticcdn.com"; D_CU="sh-cu-dualstack.ip.zstaticcdn.com"; D_CM="sh-cm-dualstack.ip.zstaticcdn.com"
+    BD_NODE="lf3-ips.zstaticcdn.com"
     
     CT_NODE="\\$PING_NODE_CT"
     CU_NODE="\\$PING_NODE_CU"
@@ -1332,10 +1388,31 @@ while true; do
     [ "\\$CU_NODE" = "default" ] && CU_NODE="\\$D_CU"
     [ "\\$CM_NODE" = "default" ] && CM_NODE="\\$D_CM"
 
-    PING_CT=\\$(get_http_ping "\\$CT_NODE")
-    PING_CU=\\$(get_http_ping "\\$CU_NODE")
-    PING_CM=\\$(get_http_ping "\\$CM_NODE")
-    PING_BD=\\$(get_http_ping "lf3-ips.zstaticcdn.com")
+    if [ "\\$ICMP_OK" = "1" ]; then
+      icmp_probe "\\$CT_NODE" ct &
+      icmp_probe "\\$CU_NODE" cu &
+      icmp_probe "\\$CM_NODE" cm &
+      icmp_probe "\\$BD_NODE" bd &
+      wait
+    fi
+
+    LOSS_CT=\\$(icmp_loss ct); PING_CT=\\$(icmp_avg ct)
+    [ -z "\\$LOSS_CT" ] && LOSS_CT="-1"
+    [ -z "\\$PING_CT" ] && PING_CT=\\$(get_http_ping "\\$CT_NODE")
+
+    LOSS_CU=\\$(icmp_loss cu); PING_CU=\\$(icmp_avg cu)
+    [ -z "\\$LOSS_CU" ] && LOSS_CU="-1"
+    [ -z "\\$PING_CU" ] && PING_CU=\\$(get_http_ping "\\$CU_NODE")
+
+    LOSS_CM=\\$(icmp_loss cm); PING_CM=\\$(icmp_avg cm)
+    [ -z "\\$LOSS_CM" ] && LOSS_CM="-1"
+    [ -z "\\$PING_CM" ] && PING_CM=\\$(get_http_ping "\\$CM_NODE")
+
+    LOSS_BD=\\$(icmp_loss bd); PING_BD=\\$(icmp_avg bd)
+    [ -z "\\$LOSS_BD" ] && LOSS_BD="-1"
+    [ -z "\\$PING_BD" ] && PING_BD=\\$(get_http_ping "\\$BD_NODE")
+
+    [ -n "\\$ICMP_DIR" ] && rm -f "\\$ICMP_DIR/icmp-ct" "\\$ICMP_DIR/icmp-cu" "\\$ICMP_DIR/icmp-cm" "\\$ICMP_DIR/icmp-bd"
   fi
   
   LOOP_COUNT=\\$((LOOP_COUNT + 1))
@@ -1413,7 +1490,7 @@ while true; do
   TX_SPEED=\\$(((TX_NOW - TX_PREV) / 5))
   RX_PREV=\\$RX_NOW; TX_PREV=\\$TX_NOW
   
-  PAYLOAD="{\\"id\\": \\"\\$SERVER_ID\\", \\"secret\\": \\"\\$SECRET\\", \\"metrics\\": { \\"cpu\\": \\"\\$CPU\\", \\"ram\\": \\"\\$RAM\\", \\"ram_total\\": \\"\\$RAM_TOTAL\\", \\"ram_used\\": \\"\\$RAM_USED\\", \\"swap_total\\": \\"\\$SWAP_TOTAL\\", \\"swap_used\\": \\"\\$SWAP_USED\\", \\"disk\\": \\"\\$DISK\\", \\"disk_total\\": \\"\\$DISK_TOTAL\\", \\"disk_used\\": \\"\\$DISK_USED\\", \\"load\\": \\"\\$LOAD\\", \\"uptime\\": \\"\\$UPTIME\\", \\"boot_time\\": \\"\\$BOOT_TIME\\", \\"net_rx\\": \\"\\$RX_NOW\\", \\"net_tx\\": \\"\\$TX_NOW\\", \\"net_in_speed\\": \\"\\$RX_SPEED\\", \\"net_out_speed\\": \\"\\$TX_SPEED\\", \\"os\\": \\"\\$OS\\", \\"arch\\": \\"\\$ARCH\\", \\"cpu_info\\": \\"\\$CPU_INFO\\", \\"processes\\": \\"\\$PROCESSES\\", \\"tcp_conn\\": \\"\\$TCP_CONN\\", \\"udp_conn\\": \\"\\$UDP_CONN\\", \\"ip_v4\\": \\"\\$IPV4\\", \\"ip_v6\\": \\"\\$IPV6\\", \\"ping_ct\\": \\"\\$PING_CT\\", \\"ping_cu\\": \\"\\$PING_CU\\", \\"ping_cm\\": \\"\\$PING_CM\\", \\"ping_bd\\": \\"\\$PING_BD\\", \\"virt\\": \\"\\$VIRT\\" }}"
+  PAYLOAD="{\\"id\\": \\"\\$SERVER_ID\\", \\"secret\\": \\"\\$SECRET\\", \\"metrics\\": { \\"cpu\\": \\"\\$CPU\\", \\"ram\\": \\"\\$RAM\\", \\"ram_total\\": \\"\\$RAM_TOTAL\\", \\"ram_used\\": \\"\\$RAM_USED\\", \\"swap_total\\": \\"\\$SWAP_TOTAL\\", \\"swap_used\\": \\"\\$SWAP_USED\\", \\"disk\\": \\"\\$DISK\\", \\"disk_total\\": \\"\\$DISK_TOTAL\\", \\"disk_used\\": \\"\\$DISK_USED\\", \\"load\\": \\"\\$LOAD\\", \\"uptime\\": \\"\\$UPTIME\\", \\"boot_time\\": \\"\\$BOOT_TIME\\", \\"net_rx\\": \\"\\$RX_NOW\\", \\"net_tx\\": \\"\\$TX_NOW\\", \\"net_in_speed\\": \\"\\$RX_SPEED\\", \\"net_out_speed\\": \\"\\$TX_SPEED\\", \\"os\\": \\"\\$OS\\", \\"arch\\": \\"\\$ARCH\\", \\"cpu_info\\": \\"\\$CPU_INFO\\", \\"processes\\": \\"\\$PROCESSES\\", \\"tcp_conn\\": \\"\\$TCP_CONN\\", \\"udp_conn\\": \\"\\$UDP_CONN\\", \\"ip_v4\\": \\"\\$IPV4\\", \\"ip_v6\\": \\"\\$IPV6\\", \\"ping_ct\\": \\"\\$PING_CT\\", \\"ping_cu\\": \\"\\$PING_CU\\", \\"ping_cm\\": \\"\\$PING_CM\\", \\"ping_bd\\": \\"\\$PING_BD\\", \\"loss_ct\\": \\"\\$LOSS_CT\\", \\"loss_cu\\": \\"\\$LOSS_CU\\", \\"loss_cm\\": \\"\\$LOSS_CM\\", \\"loss_bd\\": \\"\\$LOSS_BD\\", \\"virt\\": \\"\\$VIRT\\" }}"
   
   RES=\\$(curl -s -X POST -H "Content-Type: application/json" -d "\\$PAYLOAD" "\\$WORKER_URL" 2>/dev/null)
   if echo "\\$RES" | grep -q "INTERVAL="; then
@@ -1546,6 +1623,9 @@ rm -f /tmp/cf_install.sh
 
         last_rx = current_rx; last_tx = current_tx;
 
+        // 丢包归一:-1 表示 agent 侧 ICMP 不可用,合法范围 0-100
+        const lossNum = (v) => { const n = parseInt(v, 10); return (isNaN(n) || n < -1 || n > 100) ? -1 : n; };
+
         let history = {};
         try { history = JSON.parse(serverExists.history || '{}'); } catch(e) {}
         
@@ -1580,6 +1660,10 @@ rm -f /tmp/cf_install.sh
             history.ping_cu = updateArr(history.ping_cu, parseInt(metrics.ping_cu) || 0);
             history.ping_cm = updateArr(history.ping_cm, parseInt(metrics.ping_cm) || 0);
             history.ping_bd = updateArr(history.ping_bd, parseInt(metrics.ping_bd) || 0);
+            history.loss_ct = updateArr(history.loss_ct, lossNum(metrics.loss_ct));
+            history.loss_cu = updateArr(history.loss_cu, lossNum(metrics.loss_cu));
+            history.loss_cm = updateArr(history.loss_cm, lossNum(metrics.loss_cm));
+            history.loss_bd = updateArr(history.loss_bd, lossNum(metrics.loss_bd));
             history.time = updateLabels(history.time);
             history.last_time = nowMs;
         }
@@ -1593,6 +1677,7 @@ rm -f /tmp/cf_install.sh
               os = ?, cpu_info = ?, arch = ?, boot_time = ?, ram_used = ?, swap_total = ?, 
               swap_used = ?, disk_total = ?, disk_used = ?, processes = ?, tcp_conn = ?, udp_conn = ?, 
               country = ?, ip_v4 = ?, ip_v6 = ?, ping_ct = ?, ping_cu = ?, ping_cm = ?, ping_bd = ?,
+              loss_ct = ?, loss_cu = ?, loss_cm = ?, loss_bd = ?,
               monthly_rx = ?, monthly_tx = ?, last_rx = ?, last_tx = ?, reset_month = ?, history = ?, virt = ?
           WHERE id = ?
         `).bind(
@@ -1604,7 +1689,8 @@ rm -f /tmp/cf_install.sh
           metrics.disk_total || '0', metrics.disk_used || '0', metrics.processes || '0',
           metrics.tcp_conn || '0', metrics.udp_conn || '0', countryCode, 
           metrics.ip_v4 || '0', metrics.ip_v6 || '0', 
-          metrics.ping_ct || '0', metrics.ping_cu || '0', metrics.ping_cm || '0', metrics.ping_bd || '0', 
+          metrics.ping_ct || '0', metrics.ping_cu || '0', metrics.ping_cm || '0', metrics.ping_bd || '0',
+          String(lossNum(metrics.loss_ct)), String(lossNum(metrics.loss_cu)), String(lossNum(metrics.loss_cm)), String(lossNum(metrics.loss_bd)), 
           monthly_rx.toString(), monthly_tx.toString(), last_rx.toString(), last_tx.toString(), reset_month, historyStr, metrics.virt || '',
           id
         ).run();
@@ -1813,6 +1899,13 @@ rm -f /tmp/cf_install.sh
                  </div>
                  <div style="height: 250px;"><canvas id="chart-ping"></canvas></div>
               </div>
+
+              <div class="chart-card chart-full" style="padding: 20px; border-radius: 12px; position: relative; grid-column: 1 / -1;">
+                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                   <span class="card-title" style="font-weight:bold;">三网丢包 (%)</span>
+                 </div>
+                 <div style="height: 250px;"><canvas id="chart-loss"></canvas></div>
+              </div>
             </div>
             
             ${getFooterHtml(sys)}
@@ -1866,8 +1959,8 @@ rm -f /tmp/cf_install.sh
               });
             }
 
-            function initPingChart() {
-              const ctx = document.getElementById('chart-ping').getContext('2d');
+            function initPingChart(ctxId, yMax) {
+              const ctx = document.getElementById(ctxId).getContext('2d');
               const isDark = document.body.className.includes('theme2') || document.body.className.includes('theme5') || document.body.className.includes('theme4') || document.body.className.includes('theme8') || document.body.className.includes('theme6') || document.body.className.includes('theme15');
               const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)';
               const fontColor = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)';
@@ -1888,7 +1981,7 @@ rm -f /tmp/cf_install.sh
                   plugins: { legend: { labels: { color: fontColor } } },
                   scales: {
                     x: { grid: { display: false }, ticks: { color: fontColor, maxTicksLimit: 8 } },
-                    y: { grid: { color: gridColor }, ticks: { color: fontColor }, beginAtZero: true }
+                    y: { grid: { color: gridColor }, ticks: { color: fontColor }, beginAtZero: true, max: yMax }
                   }
                 }
               });
@@ -1900,7 +1993,8 @@ rm -f /tmp/cf_install.sh
                charts.proc = initChart('chart-proc', '进程数', null, 'rgba(139, 92, 246, 1)');
                charts.net = initChart('chart-net', '下载', '上传', 'rgba(16, 185, 129, 1)', 'rgba(59, 130, 246, 1)', true);
                charts.conn = initChart('chart-conn', 'TCP', 'UDP', 'rgba(245, 158, 11, 1)', 'rgba(236, 72, 153, 1)');
-               charts.ping = initPingChart();
+               charts.ping = initPingChart('chart-ping');
+               charts.loss = initPingChart('chart-loss', 100);
                fetchData(); setInterval(fetchData, 4000);
             });
 
@@ -1934,7 +2028,7 @@ rm -f /tmp/cf_install.sh
                   document.getElementById('txt-tcp').innerText = data.tcp_conn;
                   document.getElementById('txt-udp').innerText = data.udp_conn;
 
-                  let history = { time: [], cpu: [], ram: [], proc: [], net_in: [], net_out: [], tcp: [], udp: [], ping_ct: [], ping_cu: [], ping_cm: [], ping_bd: [] };
+                  let history = { time: [], cpu: [], ram: [], proc: [], net_in: [], net_out: [], tcp: [], udp: [], ping_ct: [], ping_cu: [], ping_cm: [], ping_bd: [], loss_ct: [], loss_cu: [], loss_cm: [], loss_bd: [] };
                   try { if (data.history) history = JSON.parse(data.history); } catch(e) {}
                   
                   if (history.time && history.time.length > 0) {
@@ -1945,6 +2039,7 @@ rm -f /tmp/cf_install.sh
                      updateChart(charts.net, labels, [history.net_in, history.net_out]);
                      updateChart(charts.conn, labels, [history.tcp, history.udp]);
                      updateChart(charts.ping, labels, [history.ping_ct, history.ping_cu, history.ping_cm, history.ping_bd]);
+                     updateChart(charts.loss, labels, [history.loss_ct, history.loss_cu, history.loss_cm, history.loss_bd]);
                   }
                } catch (e) {}
             }
@@ -1990,6 +2085,8 @@ rm -f /tmp/cf_install.sh
 
       let cardContentHtml = ''; let tableBodyHtml = '';
       const getColor = (ping) => { const p = parseInt(ping); if (p === 0 || isNaN(p)) return '#9ca3af'; if (p < 100) return '#10b981'; if (p < 200) return '#f59e0b'; return '#ef4444'; };
+      const getLossColor = (loss) => { const l = parseInt(loss); if (isNaN(l) || l < 0) return '#9ca3af'; if (l === 0) return '#10b981'; if (l < 5) return '#f59e0b'; return '#ef4444'; };
+      const lossText = (loss) => { const l = parseInt(loss); return (isNaN(l) || l < 0) ? '--' : l + '%'; };
 
       if (Object.keys(groups).length === 0) {
         cardContentHtml = '<p style="text-align:center; width: 100%; color:#888;">暂无公开服务器</p>';
@@ -2040,7 +2137,8 @@ rm -f /tmp/cf_install.sh
             if (server.ip_v4 === '1') badgesHtml += `<span class="badge badge-v4">IPv4</span>`;
             if (server.ip_v6 === '1') badgesHtml += `<span class="badge badge-v6">IPv6</span>`;
 
-            const pingHtml = `<div class="ping-box"><span>电信 <span style="color:${getColor(server.ping_ct)}; font-weight:bold;">${server.ping_ct === '0' ? '超时' : server.ping_ct + 'ms'}</span></span><span>联通 <span style="color:${getColor(server.ping_cu)}; font-weight:bold;">${server.ping_cu === '0' ? '超时' : server.ping_cu + 'ms'}</span></span><span>移动 <span style="color:${getColor(server.ping_cm)}; font-weight:bold;">${server.ping_cm === '0' ? '超时' : server.ping_cm + 'ms'}</span></span><span>字节 <span style="color:${getColor(server.ping_bd)}; font-weight:bold;">${server.ping_bd === '0' ? '超时' : server.ping_bd + 'ms'}</span></span></div>`;
+            const pingCell = (label, ping, loss) => `<span>${label} <span style="color:${getColor(ping)}; font-weight:bold;">${ping === '0' ? '超时' : ping + 'ms'}</span><span style="color:${getLossColor(loss)}; font-weight:bold;">·${lossText(loss)}</span></span>`;
+            const pingHtml = `<div class="ping-box">${pingCell('电信', server.ping_ct, server.loss_ct)}${pingCell('联通', server.ping_cu, server.loss_cu)}${pingCell('移动', server.ping_cm, server.loss_cm)}${pingCell('字节', server.ping_bd, server.loss_bd)}</div>`;
 
             const ramUsedStr = formatBytes((parseFloat(server.ram_used || 0) * 1048576).toString());
             const ramTotalStr = formatBytes((parseFloat(server.ram_total || 0) * 1048576).toString());
