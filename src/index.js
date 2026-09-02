@@ -798,10 +798,11 @@ export default {
               <div class="form-group"><label>Chat ID</label><input type="text" id="cfg_tg_chat_id" value="${sys.tg_chat_id || ''}" placeholder="如: 123456789"></div>
 
               <hr style="margin: 20px 0; border: none; border-top: 1px dashed #ccc;">
-              <label style="font-size: 14px; font-weight: 600; margin-bottom: 10px; display: block; color: #8b5cf6;">📡 三网延迟测试节点选择 (动态下发更新)</label>
+              <label style="font-size: 14px; font-weight: 600; margin-bottom: 10px; display: block; color: #8b5cf6;">📡 三网延迟与丢包测试节点选择 (动态下发更新)</label>
               <div class="form-group"><label>电信 (CT) 测速节点</label><select id="cfg_ping_node_ct">${buildOpts(pingOpts.ct, sys.ping_node_ct)}</select></div>
               <div class="form-group"><label>联通 (CU) 测速节点</label><select id="cfg_ping_node_cu">${buildOpts(pingOpts.cu, sys.ping_node_cu)}</select></div>
               <div class="form-group"><label>移动 (CM) 测速节点</label><select id="cfg_ping_node_cm">${buildOpts(pingOpts.cm, sys.ping_node_cm)}</select></div>
+              <div style="font-size: 12px; color: #888; margin-top: -4px;">丢包依赖 ICMP。少数节点不回 ICMP(如北京电信、北京联通),选中后丢包会恒显示 100%,默认节点已改为上海。</div>
             </div>
           </div>
           <button onclick="saveSettings()" class="btn btn-blue" style="padding: 10px 20px; font-size: 15px;">💾 保存全局设置</button>
