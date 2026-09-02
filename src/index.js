@@ -1291,6 +1291,15 @@ WORKER_URL="\$WORKER_URL"
 get_net_bytes() { awk 'NR>2 {rx+=\\$2; tx+=\\$10} END {printf "%.0f %.0f", rx, tx}' /proc/net/dev; }
 get_cpu_stat() { awk '/^cpu / {print \\$2+\\$3+\\$4+\\$5+\\$6+\\$7+\\$8+\\$9, \\$5+\\$6}' /proc/stat; }
 get_http_ping() { rtt=\\$(curl -o /dev/null -s -m 2 -w "%{time_total}" "http://\\$1" 2>/dev/null | awk '{printf "%.0f", \\$1*1000}'); echo "\\\${rtt:-0}"; }
+PING_COUNT=5
+ICMP_OK=0
+command -v ping >/dev/null 2>&1 && ICMP_OK=1
+# 四个目标并行探测,统计输出按目标后缀落临时文件,解析统一放在 wait 之后
+icmp_probe() { ping -c \\$PING_COUNT -w 6 -q "\\$1" > "/tmp/cf-probe-icmp-\\$2" 2>/dev/null; }
+# 丢包百分比;输出为空表示 ICMP 不可用(命令缺失、无权限或解析失败)
+icmp_loss() { awk '/packet loss/ { for (i = 1; i <= NF; i++) if (\\$i ~ /%\\$/) { sub(/%\\$/, "", \\$i); printf "%.0f", \\$i + 0; exit } }' "/tmp/cf-probe-icmp-\\$1" 2>/dev/null; }
+# 平均 RTT;输出为空表示一个回包都没有,此时延迟回退 HTTP 探测
+icmp_avg() { awk -F'=' '/min\\/avg\\/max/ { split(\\$2, a, "/"); printf "%.0f", a[2] + 0; exit }' "/tmp/cf-probe-icmp-\\$1" 2>/dev/null; }
 
 NET_STAT=\\$(get_net_bytes)
 RX_PREV=\\$(echo \\$NET_STAT | awk '{print \\$1}')
@@ -1305,6 +1314,7 @@ PREV_CPU_IDLE=\\$(echo \\$CPU_STAT | awk '{print \\$2}')
 LOOP_COUNT=0
 IPV4="0"; IPV6="0"
 PING_CT="0"; PING_CU="0"; PING_CM="0"; PING_BD="0"
+LOSS_CT="-1"; LOSS_CU="-1"; LOSS_CM="-1"; LOSS_BD="-1"
 
 REPORT_INTERVAL="${cfg.reportInterval}"
 PING_NODE_CT="${cfg.pingCt}"
@@ -1318,12 +1328,8 @@ while true; do
   fi
   
   if [ \\$((LOOP_COUNT % 6)) -eq 0 ]; then
-    idx=\\$((LOOP_COUNT % 3))
-    case \\$idx in
-      0) D_CT="bj-ct-dualstack.ip.zstaticcdn.com"; D_CU="bj-cu-dualstack.ip.zstaticcdn.com"; D_CM="bj-cm-dualstack.ip.zstaticcdn.com" ;;
-      1) D_CT="sh-ct-dualstack.ip.zstaticcdn.com"; D_CU="sh-cu-dualstack.ip.zstaticcdn.com"; D_CM="sh-cm-dualstack.ip.zstaticcdn.com" ;;
-      2) D_CT="gd-ct-dualstack.ip.zstaticcdn.com"; D_CU="gd-cu-dualstack.ip.zstaticcdn.com"; D_CM="gd-cm-dualstack.ip.zstaticcdn.com" ;;
-    esac
+    D_CT="sh-ct-dualstack.ip.zstaticcdn.com"; D_CU="sh-cu-dualstack.ip.zstaticcdn.com"; D_CM="sh-cm-dualstack.ip.zstaticcdn.com"
+    BD_NODE="lf3-ips.zstaticcdn.com"
     
     CT_NODE="\\$PING_NODE_CT"
     CU_NODE="\\$PING_NODE_CU"
@@ -1333,10 +1339,31 @@ while true; do
     [ "\\$CU_NODE" = "default" ] && CU_NODE="\\$D_CU"
     [ "\\$CM_NODE" = "default" ] && CM_NODE="\\$D_CM"
 
-    PING_CT=\\$(get_http_ping "\\$CT_NODE")
-    PING_CU=\\$(get_http_ping "\\$CU_NODE")
-    PING_CM=\\$(get_http_ping "\\$CM_NODE")
-    PING_BD=\\$(get_http_ping "lf3-ips.zstaticcdn.com")
+    if [ "\\$ICMP_OK" = "1" ]; then
+      icmp_probe "\\$CT_NODE" ct &
+      icmp_probe "\\$CU_NODE" cu &
+      icmp_probe "\\$CM_NODE" cm &
+      icmp_probe "\\$BD_NODE" bd &
+      wait
+    fi
+
+    LOSS_CT=\\$(icmp_loss ct); PING_CT=\\$(icmp_avg ct)
+    [ -z "\\$LOSS_CT" ] && LOSS_CT="-1"
+    [ -z "\\$PING_CT" ] && PING_CT=\\$(get_http_ping "\\$CT_NODE")
+
+    LOSS_CU=\\$(icmp_loss cu); PING_CU=\\$(icmp_avg cu)
+    [ -z "\\$LOSS_CU" ] && LOSS_CU="-1"
+    [ -z "\\$PING_CU" ] && PING_CU=\\$(get_http_ping "\\$CU_NODE")
+
+    LOSS_CM=\\$(icmp_loss cm); PING_CM=\\$(icmp_avg cm)
+    [ -z "\\$LOSS_CM" ] && LOSS_CM="-1"
+    [ -z "\\$PING_CM" ] && PING_CM=\\$(get_http_ping "\\$CM_NODE")
+
+    LOSS_BD=\\$(icmp_loss bd); PING_BD=\\$(icmp_avg bd)
+    [ -z "\\$LOSS_BD" ] && LOSS_BD="-1"
+    [ -z "\\$PING_BD" ] && PING_BD=\\$(get_http_ping "\\$BD_NODE")
+
+    rm -f /tmp/cf-probe-icmp-ct /tmp/cf-probe-icmp-cu /tmp/cf-probe-icmp-cm /tmp/cf-probe-icmp-bd
   fi
   
   LOOP_COUNT=\\$((LOOP_COUNT + 1))
@@ -1414,7 +1441,7 @@ while true; do
   TX_SPEED=\\$(((TX_NOW - TX_PREV) / 5))
   RX_PREV=\\$RX_NOW; TX_PREV=\\$TX_NOW
   
-  PAYLOAD="{\\"id\\": \\"\\$SERVER_ID\\", \\"secret\\": \\"\\$SECRET\\", \\"metrics\\": { \\"cpu\\": \\"\\$CPU\\", \\"ram\\": \\"\\$RAM\\", \\"ram_total\\": \\"\\$RAM_TOTAL\\", \\"ram_used\\": \\"\\$RAM_USED\\", \\"swap_total\\": \\"\\$SWAP_TOTAL\\", \\"swap_used\\": \\"\\$SWAP_USED\\", \\"disk\\": \\"\\$DISK\\", \\"disk_total\\": \\"\\$DISK_TOTAL\\", \\"disk_used\\": \\"\\$DISK_USED\\", \\"load\\": \\"\\$LOAD\\", \\"uptime\\": \\"\\$UPTIME\\", \\"boot_time\\": \\"\\$BOOT_TIME\\", \\"net_rx\\": \\"\\$RX_NOW\\", \\"net_tx\\": \\"\\$TX_NOW\\", \\"net_in_speed\\": \\"\\$RX_SPEED\\", \\"net_out_speed\\": \\"\\$TX_SPEED\\", \\"os\\": \\"\\$OS\\", \\"arch\\": \\"\\$ARCH\\", \\"cpu_info\\": \\"\\$CPU_INFO\\", \\"processes\\": \\"\\$PROCESSES\\", \\"tcp_conn\\": \\"\\$TCP_CONN\\", \\"udp_conn\\": \\"\\$UDP_CONN\\", \\"ip_v4\\": \\"\\$IPV4\\", \\"ip_v6\\": \\"\\$IPV6\\", \\"ping_ct\\": \\"\\$PING_CT\\", \\"ping_cu\\": \\"\\$PING_CU\\", \\"ping_cm\\": \\"\\$PING_CM\\", \\"ping_bd\\": \\"\\$PING_BD\\", \\"virt\\": \\"\\$VIRT\\" }}"
+  PAYLOAD="{\\"id\\": \\"\\$SERVER_ID\\", \\"secret\\": \\"\\$SECRET\\", \\"metrics\\": { \\"cpu\\": \\"\\$CPU\\", \\"ram\\": \\"\\$RAM\\", \\"ram_total\\": \\"\\$RAM_TOTAL\\", \\"ram_used\\": \\"\\$RAM_USED\\", \\"swap_total\\": \\"\\$SWAP_TOTAL\\", \\"swap_used\\": \\"\\$SWAP_USED\\", \\"disk\\": \\"\\$DISK\\", \\"disk_total\\": \\"\\$DISK_TOTAL\\", \\"disk_used\\": \\"\\$DISK_USED\\", \\"load\\": \\"\\$LOAD\\", \\"uptime\\": \\"\\$UPTIME\\", \\"boot_time\\": \\"\\$BOOT_TIME\\", \\"net_rx\\": \\"\\$RX_NOW\\", \\"net_tx\\": \\"\\$TX_NOW\\", \\"net_in_speed\\": \\"\\$RX_SPEED\\", \\"net_out_speed\\": \\"\\$TX_SPEED\\", \\"os\\": \\"\\$OS\\", \\"arch\\": \\"\\$ARCH\\", \\"cpu_info\\": \\"\\$CPU_INFO\\", \\"processes\\": \\"\\$PROCESSES\\", \\"tcp_conn\\": \\"\\$TCP_CONN\\", \\"udp_conn\\": \\"\\$UDP_CONN\\", \\"ip_v4\\": \\"\\$IPV4\\", \\"ip_v6\\": \\"\\$IPV6\\", \\"ping_ct\\": \\"\\$PING_CT\\", \\"ping_cu\\": \\"\\$PING_CU\\", \\"ping_cm\\": \\"\\$PING_CM\\", \\"ping_bd\\": \\"\\$PING_BD\\", \\"loss_ct\\": \\"\\$LOSS_CT\\", \\"loss_cu\\": \\"\\$LOSS_CU\\", \\"loss_cm\\": \\"\\$LOSS_CM\\", \\"loss_bd\\": \\"\\$LOSS_BD\\", \\"virt\\": \\"\\$VIRT\\" }}"
   
   RES=\\$(curl -s -X POST -H "Content-Type: application/json" -d "\\$PAYLOAD" "\\$WORKER_URL" 2>/dev/null)
   if echo "\\$RES" | grep -q "INTERVAL="; then
