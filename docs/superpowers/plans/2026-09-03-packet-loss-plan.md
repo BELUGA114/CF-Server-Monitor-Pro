@@ -250,12 +250,19 @@ empty loss=[] avg=[]
 PING_COUNT=5
 ICMP_OK=0
 command -v ping >/dev/null 2>&1 && ICMP_OK=1
-# 四个目标并行探测,统计输出按目标后缀落临时文件,解析统一放在 wait 之后
-icmp_probe() { ping -c \\$PING_COUNT -w 6 -q "\\$1" > "/tmp/cf-probe-icmp-\\$2" 2>/dev/null; }
-# 丢包百分比;输出为空表示 ICMP 不可用(命令缺失、无权限或 DNS 失败)
-icmp_loss() { awk '/packet loss/ { for (i = 1; i <= NF; i++) if (\\$i ~ /%\\$/) { sub(/%\\$/, "", \\$i); printf "%.0f", \\$i + 0; exit } }' "/tmp/cf-probe-icmp-\\$1" 2>/dev/null; }
-# 平均 RTT;输出为空表示一个回包都没有
-icmp_avg() { awk -F'=' '/min\\/avg\\/max/ { split(\\$2, a, "/"); printf "%.0f", a[2] + 0; exit }' "/tmp/cf-probe-icmp-\\$1" 2>/dev/null; }
+# 统计文件必须放在父目录仅 root 可写的位置。放 /tmp 会被非特权用户预置符号链接,
+# root 的重定向跟随后可任意截断文件(CWE-59)
+ICMP_DIR=""
+for d in /run/cf-probe /var/lib/cf-probe; do
+  if (umask 077; mkdir -p "\\$d" 2>/dev/null); then ICMP_DIR="\\$d"; chmod 700 "\\$d" 2>/dev/null; break; fi
+done
+[ -z "\\$ICMP_DIR" ] && ICMP_OK=0
+# 四个目标并行探测,统计输出按目标后缀落文件,解析统一放在 wait 之后
+icmp_probe() { ping -c \\$PING_COUNT -w 6 -q "\\$1" > "\\$ICMP_DIR/icmp-\\$2" 2>/dev/null; }
+# 丢包百分比;输出为空表示 ICMP 不可用(命令缺失、无权限或解析失败)
+icmp_loss() { awk '/packet loss/ { for (i = 1; i <= NF; i++) if (\\$i ~ /%\\$/) { sub(/%\\$/, "", \\$i); printf "%.0f", \\$i + 0; exit } }' "\\$ICMP_DIR/icmp-\\$1" 2>/dev/null; }
+# 平均 RTT;输出为空表示一个回包都没有,此时延迟回退 HTTP 探测
+icmp_avg() { awk -F'=' '/min\\/avg\\/max/ { split(\\$2, a, "/"); printf "%.0f", a[2] + 0; exit }' "\\$ICMP_DIR/icmp-\\$1" 2>/dev/null; }
 ```
 
 `\\$PING_COUNT` 最终会变成 `$PING_COUNT`;awk 里的 `\\$i`、`/%\\$/` 分别变成 `$i` 和 `/%$/`;`min\\/avg\\/max` 变成 `min\/avg\/max`。
@@ -314,7 +321,7 @@ LOSS_CT="-1"; LOSS_CU="-1"; LOSS_CM="-1"; LOSS_BD="-1"
     [ -z "\\$LOSS_BD" ] && LOSS_BD="-1"
     [ -z "\\$PING_BD" ] && PING_BD=\\$(get_http_ping "\\$BD_NODE")
 
-    rm -f /tmp/cf-probe-icmp-ct /tmp/cf-probe-icmp-cu /tmp/cf-probe-icmp-cm /tmp/cf-probe-icmp-bd
+    [ -n "\\$ICMP_DIR" ] && rm -f "\\$ICMP_DIR/icmp-ct" "\\$ICMP_DIR/icmp-cu" "\\$ICMP_DIR/icmp-cm" "\\$ICMP_DIR/icmp-bd"
   fi
 ```
 
@@ -369,10 +376,10 @@ Expected: 第一条输出 `5`(一处定义加四处调用);第二条三行,分�
 把最终脚本里的三个函数拿出来直接喂 Step 1 的样本文件,确认在真脚本形态下也对:
 
 ```bash
-cp /tmp/pl/iputils.txt /tmp/cf-probe-icmp-ct
+mkdir -p /tmp/pl/dir && ICMP_DIR=/tmp/pl/dir
+cp /tmp/pl/iputils.txt "$ICMP_DIR/icmp-ct"
 sed -n '/^icmp_loss()/p;/^icmp_avg()/p' /tmp/pl/agent-debian.sh > /tmp/pl/fn.sh
 . /tmp/pl/fn.sh && printf 'loss=[%s] avg=[%s]\n' "$(icmp_loss ct)" "$(icmp_avg ct)"
-rm -f /tmp/cf-probe-icmp-ct
 ```
 Expected: `loss=[20] avg=[25]`
 
@@ -778,7 +785,7 @@ Expected: 上报返回 `INTERVAL=...`;查询得到 `25 / 0 / 0 / -1`
 - [ ] **Step 3: 清理临时文件**
 
 ```bash
-rm -rf /tmp/pl /tmp/cf-probe-icmp-ct /tmp/cf-probe-icmp-cu /tmp/cf-probe-icmp-cm /tmp/cf-probe-icmp-bd
+rm -rf /tmp/pl
 ```
 
 `.dev.vars` 保留还是删掉都行,它在 `.gitignore` 里;确认 `git status --short` 干净。
