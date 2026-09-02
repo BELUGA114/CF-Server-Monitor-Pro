@@ -61,6 +61,7 @@ export default {
         
         const newCols = {
           ping_ct: "TEXT DEFAULT '0'", ping_cu: "TEXT DEFAULT '0'", ping_cm: "TEXT DEFAULT '0'", ping_bd: "TEXT DEFAULT '0'",
+          loss_ct: "TEXT DEFAULT '-1'", loss_cu: "TEXT DEFAULT '-1'", loss_cm: "TEXT DEFAULT '-1'", loss_bd: "TEXT DEFAULT '-1'",
           monthly_rx: "TEXT DEFAULT '0'", monthly_tx: "TEXT DEFAULT '0'", last_rx: "TEXT DEFAULT '0'", last_tx: "TEXT DEFAULT '0'", reset_month: "TEXT DEFAULT ''",
           agent_os: "TEXT DEFAULT 'debian'",
           history: "TEXT DEFAULT '{}'",
@@ -1546,6 +1547,9 @@ rm -f /tmp/cf_install.sh
 
         last_rx = current_rx; last_tx = current_tx;
 
+        // 丢包归一:-1 表示 agent 侧 ICMP 不可用,合法范围 0-100
+        const lossNum = (v) => { const n = parseInt(v, 10); return (isNaN(n) || n < -1 || n > 100) ? -1 : n; };
+
         let history = {};
         try { history = JSON.parse(serverExists.history || '{}'); } catch(e) {}
         
@@ -1580,6 +1584,10 @@ rm -f /tmp/cf_install.sh
             history.ping_cu = updateArr(history.ping_cu, parseInt(metrics.ping_cu) || 0);
             history.ping_cm = updateArr(history.ping_cm, parseInt(metrics.ping_cm) || 0);
             history.ping_bd = updateArr(history.ping_bd, parseInt(metrics.ping_bd) || 0);
+            history.loss_ct = updateArr(history.loss_ct, lossNum(metrics.loss_ct));
+            history.loss_cu = updateArr(history.loss_cu, lossNum(metrics.loss_cu));
+            history.loss_cm = updateArr(history.loss_cm, lossNum(metrics.loss_cm));
+            history.loss_bd = updateArr(history.loss_bd, lossNum(metrics.loss_bd));
             history.time = updateLabels(history.time);
             history.last_time = nowMs;
         }
@@ -1593,6 +1601,7 @@ rm -f /tmp/cf_install.sh
               os = ?, cpu_info = ?, arch = ?, boot_time = ?, ram_used = ?, swap_total = ?, 
               swap_used = ?, disk_total = ?, disk_used = ?, processes = ?, tcp_conn = ?, udp_conn = ?, 
               country = ?, ip_v4 = ?, ip_v6 = ?, ping_ct = ?, ping_cu = ?, ping_cm = ?, ping_bd = ?,
+              loss_ct = ?, loss_cu = ?, loss_cm = ?, loss_bd = ?,
               monthly_rx = ?, monthly_tx = ?, last_rx = ?, last_tx = ?, reset_month = ?, history = ?, virt = ?
           WHERE id = ?
         `).bind(
@@ -1604,7 +1613,8 @@ rm -f /tmp/cf_install.sh
           metrics.disk_total || '0', metrics.disk_used || '0', metrics.processes || '0',
           metrics.tcp_conn || '0', metrics.udp_conn || '0', countryCode, 
           metrics.ip_v4 || '0', metrics.ip_v6 || '0', 
-          metrics.ping_ct || '0', metrics.ping_cu || '0', metrics.ping_cm || '0', metrics.ping_bd || '0', 
+          metrics.ping_ct || '0', metrics.ping_cu || '0', metrics.ping_cm || '0', metrics.ping_bd || '0',
+          String(lossNum(metrics.loss_ct)), String(lossNum(metrics.loss_cu)), String(lossNum(metrics.loss_cm)), String(lossNum(metrics.loss_bd)), 
           monthly_rx.toString(), monthly_tx.toString(), last_rx.toString(), last_tx.toString(), reset_month, historyStr, metrics.virt || '',
           id
         ).run();
