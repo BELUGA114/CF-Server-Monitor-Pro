@@ -2068,6 +2068,8 @@ rm -f /tmp/cf_install.sh
 
       let cardContentHtml = ''; let tableBodyHtml = '';
       const getColor = (ping) => { const p = parseInt(ping); if (p === 0 || isNaN(p)) return '#9ca3af'; if (p < 100) return '#10b981'; if (p < 200) return '#f59e0b'; return '#ef4444'; };
+      const getLossColor = (loss) => { const l = parseInt(loss); if (isNaN(l) || l < 0) return '#9ca3af'; if (l === 0) return '#10b981'; if (l < 5) return '#f59e0b'; return '#ef4444'; };
+      const lossText = (loss) => { const l = parseInt(loss); return (isNaN(l) || l < 0) ? '--' : l + '%'; };
 
       if (Object.keys(groups).length === 0) {
         cardContentHtml = '<p style="text-align:center; width: 100%; color:#888;">暂无公开服务器</p>';
@@ -2118,7 +2120,8 @@ rm -f /tmp/cf_install.sh
             if (server.ip_v4 === '1') badgesHtml += `<span class="badge badge-v4">IPv4</span>`;
             if (server.ip_v6 === '1') badgesHtml += `<span class="badge badge-v6">IPv6</span>`;
 
-            const pingHtml = `<div class="ping-box"><span>电信 <span style="color:${getColor(server.ping_ct)}; font-weight:bold;">${server.ping_ct === '0' ? '超时' : server.ping_ct + 'ms'}</span></span><span>联通 <span style="color:${getColor(server.ping_cu)}; font-weight:bold;">${server.ping_cu === '0' ? '超时' : server.ping_cu + 'ms'}</span></span><span>移动 <span style="color:${getColor(server.ping_cm)}; font-weight:bold;">${server.ping_cm === '0' ? '超时' : server.ping_cm + 'ms'}</span></span><span>字节 <span style="color:${getColor(server.ping_bd)}; font-weight:bold;">${server.ping_bd === '0' ? '超时' : server.ping_bd + 'ms'}</span></span></div>`;
+            const pingCell = (label, ping, loss) => `<span>${label} <span style="color:${getColor(ping)}; font-weight:bold;">${ping === '0' ? '超时' : ping + 'ms'}</span><span style="color:${getLossColor(loss)}; font-weight:bold;">·${lossText(loss)}</span></span>`;
+            const pingHtml = `<div class="ping-box">${pingCell('电信', server.ping_ct, server.loss_ct)}${pingCell('联通', server.ping_cu, server.loss_cu)}${pingCell('移动', server.ping_cm, server.loss_cm)}${pingCell('字节', server.ping_bd, server.loss_bd)}</div>`;
 
             const ramUsedStr = formatBytes((parseFloat(server.ram_used || 0) * 1048576).toString());
             const ramTotalStr = formatBytes((parseFloat(server.ram_total || 0) * 1048576).toString());
