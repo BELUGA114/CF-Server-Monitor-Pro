@@ -8,7 +8,7 @@
 
 **Tech Stack:** Cloudflare Workers、D1、原生 JavaScript、内嵌 POSIX sh 与 PowerShell agent 脚本、Chart.js
 
-**Spec:** `docs/2026-09-03-packet-loss-spec.md`
+**Spec:** `docs/superpowers/specs/2026-09-03-packet-loss-spec.md`
 
 ---
 
