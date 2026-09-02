@@ -1073,6 +1073,8 @@ $RX_PREV = 0; $TX_PREV = 0
 $LOOP_COUNT = 0
 $IPV4 = "0"; $IPV6 = "0"
 $PING_CT = "0"; $PING_CU = "0"; $PING_CM = "0"; $PING_BD = "0"
+$LOSS_CT = -1; $LOSS_CU = -1; $LOSS_CM = -1; $LOSS_BD = -1
+$PING_COUNT = 5
 
 function Get-HttpPing {
     param([string]$node)
@@ -1093,25 +1095,60 @@ function Get-HttpPing {
     }
 }
 
+function Get-IcmpStat {
+    param([string]$node)
+    # 返回 @(丢包百分比, 平均RTT);丢包 -1 表示无法测量,RTT -1 表示一个回包都没有
+    try {
+        $tasks = @()
+        for ($i = 0; $i -lt $PING_COUNT; $i++) {
+            $p = New-Object System.Net.NetworkInformation.Ping
+            $tasks += $p.SendPingAsync($node, 1000)
+        }
+        try { [Threading.Tasks.Task]::WaitAll($tasks, 4000) | Out-Null } catch { }
+        $done = 0; $ok = 0; $sum = 0
+        foreach ($t in $tasks) {
+            if ($t.Status -ne "RanToCompletion") { continue }
+            $done++
+            if ($t.Result.Status -eq "Success") { $ok++; $sum += $t.Result.RoundtripTime }
+        }
+        # 任务未完成(DNS 失败等)与完成但超时是两回事,前者报 -1,后者是真丢包
+        if ($done -eq 0) { return @(-1, -1) }
+        $loss = [math]::Round(($done - $ok) * 100 / $done)
+        if ($ok -eq 0) { return @($loss, -1) }
+        return @($loss, [math]::Round($sum / $ok))
+    } catch {
+        return @(-1, -1)
+    }
+}
+
 while ($true) {
     if ($LOOP_COUNT % 60 -eq 0) {
         try { $ipv4_req = (Invoke-RestMethod -Uri "https://cloudflare.com/cdn-cgi/trace" -UseBasicParsing -TimeoutSec 3); if ($ipv4_req -match "ip=") { $IPV4 = "1" } else { $IPV4 = "0" } } catch { $IPV4 = "0" }
     }
     
     if ($LOOP_COUNT % 6 -eq 0) {
-        $idx = $LOOP_COUNT % 3
-        if ($idx -eq 0) { $D_CT="bj-ct-dualstack.ip.zstaticcdn.com"; $D_CU="bj-cu-dualstack.ip.zstaticcdn.com"; $D_CM="bj-cm-dualstack.ip.zstaticcdn.com" }
-        elseif ($idx -eq 1) { $D_CT="sh-ct-dualstack.ip.zstaticcdn.com"; $D_CU="sh-cu-dualstack.ip.zstaticcdn.com"; $D_CM="sh-cm-dualstack.ip.zstaticcdn.com" }
-        else { $D_CT="gd-ct-dualstack.ip.zstaticcdn.com"; $D_CU="gd-cu-dualstack.ip.zstaticcdn.com"; $D_CM="gd-cm-dualstack.ip.zstaticcdn.com" }
+        $D_CT = "sh-ct-dualstack.ip.zstaticcdn.com"; $D_CU = "sh-cu-dualstack.ip.zstaticcdn.com"; $D_CM = "sh-cm-dualstack.ip.zstaticcdn.com"
+        $c_bd = "lf3-ips.zstaticcdn.com"
         
         $c_ct = if ($PING_NODE_CT -eq "default") { $D_CT } else { $PING_NODE_CT }
         $c_cu = if ($PING_NODE_CU -eq "default") { $D_CU } else { $PING_NODE_CU }
         $c_cm = if ($PING_NODE_CM -eq "default") { $D_CM } else { $PING_NODE_CM }
 
-        $PING_CT = Get-HttpPing $c_ct
-        $PING_CU = Get-HttpPing $c_cu
-        $PING_CM = Get-HttpPing $c_cm
-        $PING_BD = Get-HttpPing "lf3-ips.zstaticcdn.com"
+        $r = Get-IcmpStat $c_ct
+        $LOSS_CT = $r[0]
+        $PING_CT = if ($r[1] -ge 0) { $r[1] } else { Get-HttpPing $c_ct }
+
+        $r = Get-IcmpStat $c_cu
+        $LOSS_CU = $r[0]
+        $PING_CU = if ($r[1] -ge 0) { $r[1] } else { Get-HttpPing $c_cu }
+
+        $r = Get-IcmpStat $c_cm
+        $LOSS_CM = $r[0]
+        $PING_CM = if ($r[1] -ge 0) { $r[1] } else { Get-HttpPing $c_cm }
+
+        $r = Get-IcmpStat $c_bd
+        $LOSS_BD = $r[0]
+        $PING_BD = if ($r[1] -ge 0) { $r[1] } else { Get-HttpPing $c_bd }
     }
 
     $LOOP_COUNT++
@@ -1209,6 +1246,10 @@ while ($true) {
             ping_cu = "$PING_CU"
             ping_cm = "$PING_CM"
             ping_bd = "$PING_BD"
+            loss_ct = "$LOSS_CT"
+            loss_cu = "$LOSS_CU"
+            loss_cm = "$LOSS_CM"
+            loss_bd = "$LOSS_BD"
             virt = "$VIRT"
         }
     }
