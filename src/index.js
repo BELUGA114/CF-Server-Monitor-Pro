@@ -1633,7 +1633,12 @@ rm -f /tmp/cf_install.sh
         last_rx = current_rx; last_tx = current_tx;
 
         // 丢包归一:-1 表示 agent 侧 ICMP 不可用,合法范围 0-100
-        const lossNum = (v) => { const n = parseInt(v, 10); return (isNaN(n) || n < -1 || n > 100) ? -1 : n; };
+        // 重复响应会让 ping 报负丢包(如 -20%),那是测到了而非测不了,越界值钳制入区间,-1 只保留给缺失输入
+        const lossNum = (v) => {
+            const n = parseInt(v, 10);
+            if (isNaN(n) || n === -1) return -1;
+            return n < 0 ? 0 : (n > 100 ? 100 : n);
+        };
 
         let history = {};
         try { history = JSON.parse(serverExists.history || '{}'); } catch(e) {}
