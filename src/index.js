@@ -1633,9 +1633,13 @@ rm -f /tmp/cf_install.sh
         const lastHistTime = history.last_time || 0;
         
         if (nowMs - lastHistTime >= 300000 || !history.time) {
-            const maxPoints = 288; 
+            const maxPoints = 288;
+            // 新增序列(如后加入的丢包)在老 history 里不存在,若从空数组开始增长会与已饱和的 time 轴按下标错位;
+            // 按 time 当前长度在左侧补 null 对齐,图上呈断线表示该时段无采集
+            const padTo = Array.isArray(history.time) ? history.time.length : 0;
             const updateArr = (arr, val) => {
                 if (!Array.isArray(arr)) arr = [];
+                while (arr.length < padTo) arr.unshift(null);
                 arr.push(val);
                 if (arr.length > maxPoints) arr.shift();
                 return arr;
