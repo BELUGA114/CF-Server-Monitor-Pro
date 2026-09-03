@@ -330,6 +330,16 @@ Remove-Item -Path C:\ProgramData\CFProbe -Recurse -Force -ErrorAction SilentlyCo
 
 ---
 
+## 免责声明
+
+CF-Server-Monitor-Pro 是一个自托管的服务器监控面板。安装脚本会在被控主机上以 root（Linux systemd 服务）或 SYSTEM（Windows 计划任务）权限注册常驻探针。
+
+请仅将其部署在你自己拥有、或已获得明确管理授权的系统上。你对本项目的部署方式与使用行为承担全部责任；开发者不对未授权访问、权限驻留、命令执行、其他滥用行为，以及由此产生的任何后果承担责任。
+
+CF-Server-Monitor-Pro is a self-hosted monitoring application. Deploy it only on systems you own or are authorized to manage. You are solely responsible for how you deploy and use it. The developers accept no liability for unauthorized access, persistence, command execution, other misuse, or any resulting consequences.
+
+---
+
 ## 参与贡献与协议
 
 本项目由纯 Serverless 爱好者开发，功能持续迭代中。
