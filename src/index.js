@@ -1099,10 +1099,12 @@ function Get-HttpPing {
 function Get-IcmpStat {
     param([string]$node)
     # 返回 @(丢包百分比, 平均RTT);丢包 -1 表示无法测量,RTT -1 表示一个回包都没有
+    $pings = @()
     try {
         $tasks = @()
         for ($i = 0; $i -lt $PING_COUNT; $i++) {
             $p = New-Object System.Net.NetworkInformation.Ping
+            $pings += $p
             $tasks += $p.SendPingAsync($node, 1000)
         }
         try { [Threading.Tasks.Task]::WaitAll($tasks, 4000) | Out-Null } catch { }
@@ -1116,9 +1118,15 @@ function Get-IcmpStat {
         if ($done -eq 0) { return @(-1, -1) }
         $loss = [math]::Round(($done - $ok) * 100 / $done)
         if ($ok -eq 0) { return @($loss, -1) }
-        return @($loss, [math]::Round($sum / $ok))
+        # 同城目标的亚毫秒 RTT 会四舍五入成 0,而前台把 ping 0 当超时,成功探测下限取 1ms
+        $avg = [math]::Round($sum / $ok)
+        if ($avg -lt 1) { $avg = 1 }
+        return @($loss, $avg)
     } catch {
         return @(-1, -1)
+    } finally {
+        # Ping 持有原生 socket 句柄,不显式释放只能等 finalizer,常驻循环下句柄会堆积
+        foreach ($p in $pings) { try { $p.Dispose() } catch { } }
     }
 }
 
@@ -1348,7 +1356,8 @@ icmp_probe() { ping -c \\$PING_COUNT -w 6 -q "\\$1" > "\\$ICMP_DIR/icmp-\\$2" 2>
 # 丢包百分比;输出为空表示 ICMP 不可用(命令缺失、无权限或解析失败)
 icmp_loss() { awk '/packet loss/ { for (i = 1; i <= NF; i++) if (\\$i ~ /%\\$/) { sub(/%\\$/, "", \\$i); printf "%.0f", \\$i + 0; exit } }' "\\$ICMP_DIR/icmp-\\$1" 2>/dev/null; }
 # 平均 RTT;输出为空表示一个回包都没有,此时延迟回退 HTTP 探测
-icmp_avg() { awk -F'=' '/min\\/avg\\/max/ { split(\\$2, a, "/"); printf "%.0f", a[2] + 0; exit }' "\\$ICMP_DIR/icmp-\\$1" 2>/dev/null; }
+# 同城目标的亚毫秒 RTT 会四舍五入成 0,而前台把 ping 0 当超时,故成功探测下限取 1ms
+icmp_avg() { awk -F'=' '/min\\/avg\\/max/ { split(\\$2, a, "/"); v = a[2] + 0; if (v < 1) v = 1; printf "%.0f", v; exit }' "\\$ICMP_DIR/icmp-\\$1" 2>/dev/null; }
 
 NET_STAT=\\$(get_net_bytes)
 RX_PREV=\\$(echo \\$NET_STAT | awk '{print \\$1}')
@@ -2043,9 +2052,16 @@ rm -f /tmp/cf_install.sh
                      updateChart(charts.net, labels, [history.net_in, history.net_out]);
                      updateChart(charts.conn, labels, [history.tcp, history.udp]);
                      updateChart(charts.ping, labels, [history.ping_ct, history.ping_cu, history.ping_cm, history.ping_bd]);
-                     updateChart(charts.loss, labels, [history.loss_ct, history.loss_cu, history.loss_cm, history.loss_bd]);
+                     updateChart(charts.loss, labels, [lossSeries(history.loss_ct), lossSeries(history.loss_cu), lossSeries(history.loss_cm), lossSeries(history.loss_bd)]);
                   }
                } catch (e) {}
+            }
+
+            // 丢包 -1 表示 agent 侧 ICMP 不可用,补齐位是 null,两者都不是真实测量值;
+            // 统一转成 null 让 Chart.js 断线,否则会画成贴底的 0% 实线,并把 y 轴拉到 0 以下
+            function lossSeries(arr) {
+               if (!Array.isArray(arr)) return [];
+               return arr.map(v => (typeof v === 'number' && v >= 0) ? v : null);
             }
 
             function updateChart(chart, labels, datasetsData) {
