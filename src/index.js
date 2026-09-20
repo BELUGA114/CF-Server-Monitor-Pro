@@ -2110,8 +2110,19 @@ rm -f /tmp/cf_install.sh
 
       let cardContentHtml = ''; let tableBodyHtml = '';
       const getColor = (ping) => { const p = parseInt(ping); if (p === 0 || isNaN(p)) return '#9ca3af'; if (p < 100) return '#10b981'; if (p < 200) return '#f59e0b'; return '#ef4444'; };
-      const getLossColor = (loss) => { const l = parseInt(loss); if (isNaN(l) || l < 0) return '#9ca3af'; if (l === 0) return '#10b981'; if (l < 5) return '#f59e0b'; return '#ef4444'; };
-      const lossText = (loss) => { const l = parseInt(loss); return (isNaN(l) || l < 0) ? '--' : l + '%'; };
+      const getLossColor = (loss) => { const l = parseFloat(loss); if (isNaN(l) || l < 0) return '#9ca3af'; if (l === 0) return '#10b981'; if (l < 5) return '#f59e0b'; return '#ef4444'; };
+      const lossText = (loss) => { const l = parseFloat(loss); return (isNaN(l) || l < 0) ? '--' : (Math.round(l * 10) / 10) + '%'; };
+      // 计算 24 小时内某序列的平均丢包(history 满 288 点即 24h);-1 与 null 是无效采样(ICMP 不可用或该时段未采集),排除后求均值,无有效样本返回 -1
+      const avgLoss = (arr) => {
+        if (!Array.isArray(arr)) return -1;
+        let sum = 0, cnt = 0;
+        for (const v of arr) {
+          const n = typeof v === 'number' ? v : parseInt(v, 10);
+          if (isNaN(n) || n < 0) continue;
+          sum += n; cnt++;
+        }
+        return cnt === 0 ? -1 : sum / cnt;
+      };
 
       if (Object.keys(groups).length === 0) {
         cardContentHtml = '<p style="text-align:center; width: 100%; color:#888;">暂无公开服务器</p>';
@@ -2162,8 +2173,11 @@ rm -f /tmp/cf_install.sh
             if (server.ip_v4 === '1') badgesHtml += `<span class="badge badge-v4">IPv4</span>`;
             if (server.ip_v6 === '1') badgesHtml += `<span class="badge badge-v6">IPv6</span>`;
 
-            const pingCell = (label, ping, loss) => `<span>${label} <span style="color:${getColor(ping)}; font-weight:bold;">${ping === '0' ? '超时' : ping + 'ms'}</span><span style="color:${getLossColor(loss)}; font-weight:bold;">·${lossText(loss)}</span></span>`;
-            const pingHtml = `<div class="ping-box">${pingCell('电信', server.ping_ct, server.loss_ct)}${pingCell('联通', server.ping_cu, server.loss_cu)}${pingCell('移动', server.ping_cm, server.loss_cm)}${pingCell('字节', server.ping_bd, server.loss_bd)}</div>`;
+            // 卡片丢包显示 24 小时平均值(取自 history),而非最近一次上报
+            let cardHist = {};
+            try { cardHist = JSON.parse(server.history || '{}'); } catch(e) {}
+            const pingCell = (label, ping, loss) => `<span>${label} <span style="color:${getColor(ping)}; font-weight:bold;">${ping === '0' ? '超时' : ping + 'ms'}</span><span style="color:${getLossColor(loss)}; font-weight:bold;" title="24 小时平均丢包">·${lossText(loss)}</span></span>`;
+            const pingHtml = `<div class="ping-box">${pingCell('电信', server.ping_ct, avgLoss(cardHist.loss_ct))}${pingCell('联通', server.ping_cu, avgLoss(cardHist.loss_cu))}${pingCell('移动', server.ping_cm, avgLoss(cardHist.loss_cm))}${pingCell('字节', server.ping_bd, avgLoss(cardHist.loss_bd))}</div>`;
 
             const ramUsedStr = formatBytes((parseFloat(server.ram_used || 0) * 1048576).toString());
             const ramTotalStr = formatBytes((parseFloat(server.ram_total || 0) * 1048576).toString());
