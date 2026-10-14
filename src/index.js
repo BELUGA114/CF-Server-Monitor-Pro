@@ -1107,8 +1107,12 @@ function Get-HttpPing {
         $sw.Stop()
         return [math]::Round($sw.Elapsed.TotalMilliseconds)
     } catch {
-        if ($_.Exception.Response) {
-            $_.Exception.Response.Close()
+        # PowerShell 把 .NET 方法抛出的异常包在 MethodInvocationException 里,直接看
+        # $_.Exception.Response 永远是空,必须顺着 InnerException 找到真正的 WebException
+        $web = $_.Exception
+        while ($web -and $web -isnot [System.Net.WebException]) { $web = $web.InnerException }
+        if ($web -and $web.Response) {
+            $web.Response.Close()
             $sw.Stop()
             return [math]::Round($sw.Elapsed.TotalMilliseconds)
         }
