@@ -1077,11 +1077,31 @@ $PING_CT = "0"; $PING_CU = "0"; $PING_CM = "0"; $PING_BD = "0"
 $LOSS_CT = -1; $LOSS_CU = -1; $LOSS_CM = -1; $LOSS_BD = -1
 $PING_COUNT = 5
 
+# 三网目标是双栈域名,本机取 A 还是 AAAA 会随 IPv6 状态漂移(无关的 WARP/TUN 起来就会变),
+# 有 IPv4 地址时探测固定走 IPv4。只看本机网卡地址、不依赖网络,避免在 IPv6 黑洞的机器上
+# 把连不上 Cloudflare 误判成没有 IPv4。
+$PROBE_IPV4 = $false
+try {
+    $PROBE_IPV4 = @([System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
+        Where-Object { $_.OperationalStatus -eq 'Up' } |
+        ForEach-Object { $_.GetIPProperties().UnicastAddresses } |
+        Where-Object { $_.Address.AddressFamily -eq 'InterNetwork' -and $_.Address.IPAddressToString -notlike '127.*' -and $_.Address.IPAddressToString -notlike '169.254.*' }).Count -gt 0
+} catch { $PROBE_IPV4 = $false }
+
 function Get-HttpPing {
     param([string]$node)
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
-        $req = [System.Net.WebRequest]::Create("http://" + $node)
+        $target = $node
+        if ($PROBE_IPV4) {
+            # 只挑 A 记录;交给系统自己选会按 IPv6 优先落到 AAAA
+            $v4 = @([System.Net.Dns]::GetHostAddresses($node) | Where-Object { $_.AddressFamily -eq 'InterNetwork' })
+            if ($v4.Count -eq 0) { return 0 }
+            $target = $v4[0].IPAddressToString
+        }
+        $req = [System.Net.WebRequest]::Create("http://" + $target)
+        # 连的是 IPv4 字面量,Host 头必须还是域名,否则虚拟主机可能不回
+        if ($target -ne $node) { $req.Host = $node }
         $req.Timeout = 2000; $req.Method = "HEAD"
         $res = $req.GetResponse(); $res.Close()
         $sw.Stop()
@@ -1101,11 +1121,18 @@ function Get-IcmpStat {
     # 返回 @(丢包百分比, 平均RTT);丢包 -1 表示无法测量,RTT -1 表示一个回包都没有
     $pings = @()
     try {
+        $target = $node
+        if ($PROBE_IPV4) {
+            # 只挑 A 记录;交给 Ping 自己解析会按系统偏好落到 AAAA
+            $v4 = @([System.Net.Dns]::GetHostAddresses($node) | Where-Object { $_.AddressFamily -eq 'InterNetwork' })
+            if ($v4.Count -eq 0) { return @(-1, -1) }
+            $target = $v4[0]
+        }
         $tasks = @()
         for ($i = 0; $i -lt $PING_COUNT; $i++) {
             $p = New-Object System.Net.NetworkInformation.Ping
             $pings += $p
-            $tasks += $p.SendPingAsync($node, 1000)
+            $tasks += $p.SendPingAsync($target, 1000)
         }
         try { [Threading.Tasks.Task]::WaitAll($tasks, 4000) | Out-Null } catch { }
         $done = 0; $ok = 0; $sum = 0
@@ -1340,10 +1367,14 @@ WORKER_URL="\$WORKER_URL"
 
 get_net_bytes() { awk 'NR>2 {rx+=\\$2; tx+=\\$10} END {printf "%.0f %.0f", rx, tx}' /proc/net/dev; }
 get_cpu_stat() { awk '/^cpu / {print \\$2+\\$3+\\$4+\\$5+\\$6+\\$7+\\$8+\\$9, \\$5+\\$6}' /proc/stat; }
-get_http_ping() { rtt=\\$(curl -o /dev/null -s -m 2 -w "%{time_total}" "http://\\$1" 2>/dev/null | awk '{printf "%.0f", \\$1*1000}'); echo "\\\${rtt:-0}"; }
+get_http_ping() { rtt=\\$(curl \\$PROBE_AF -o /dev/null -s -m 2 -w "%{time_total}" "http://\\$1" 2>/dev/null | awk '{printf "%.0f", \\$1*1000}'); echo "\\\${rtt:-0}"; }
 PING_COUNT=5
 ICMP_OK=0
 command -v ping >/dev/null 2>&1 && ICMP_OK=1
+# 三网目标是双栈域名,本机取 A 还是 AAAA 会随 IPv6 状态漂移(无关的 WARP/TUN 起来就会变),
+# 有 IPv4 出口时固定走 IPv4。老 busybox 的 ping 不认 -4,启动自检一次,认不出就退回原命令。
+PING4_OK=0
+ping -4 -c 1 -W 1 127.0.0.1 >/dev/null 2>&1 && PING4_OK=1
 # 统计文件必须放在父目录仅 root 可写的位置。放 /tmp 会被非特权用户预置符号链接,
 # root 的重定向跟随后可任意截断文件(CWE-59)
 ICMP_DIR=""
@@ -1352,7 +1383,7 @@ for d in /run/cf-probe /var/lib/cf-probe; do
 done
 [ -z "\\$ICMP_DIR" ] && ICMP_OK=0
 # 四个目标并行探测,统计输出按目标后缀落文件,解析统一放在 wait 之后
-icmp_probe() { ping -c \\$PING_COUNT -w 6 -q "\\$1" > "\\$ICMP_DIR/icmp-\\$2" 2>/dev/null; }
+icmp_probe() { ping \\$PROBE_AF -c \\$PING_COUNT -w 6 -q "\\$1" > "\\$ICMP_DIR/icmp-\\$2" 2>/dev/null; }
 # 丢包百分比;输出为空表示 ICMP 不可用(命令缺失、无权限或解析失败)
 icmp_loss() { awk '/packet loss/ { for (i = 1; i <= NF; i++) if (\\$i ~ /%\\$/) { sub(/%\\$/, "", \\$i); printf "%.0f", \\$i + 0; exit } }' "\\$ICMP_DIR/icmp-\\$1" 2>/dev/null; }
 # 平均 RTT;输出为空表示一个回包都没有,此时延迟回退 HTTP 探测
@@ -1370,6 +1401,7 @@ PREV_CPU_TOTAL=\\$(echo \\$CPU_STAT | awk '{print \\$1}')
 PREV_CPU_IDLE=\\$(echo \\$CPU_STAT | awk '{print \\$2}')
 
 LOOP_COUNT=0
+PROBE_AF=""
 IPV4="0"; IPV6="0"
 PING_CT="0"; PING_CU="0"; PING_CM="0"; PING_BD="0"
 LOSS_CT="-1"; LOSS_CU="-1"; LOSS_CM="-1"; LOSS_BD="-1"
@@ -1396,6 +1428,10 @@ while true; do
     [ "\\$CT_NODE" = "default" ] && CT_NODE="\\$D_CT"
     [ "\\$CU_NODE" = "default" ] && CU_NODE="\\$D_CU"
     [ "\\$CM_NODE" = "default" ] && CM_NODE="\\$D_CM"
+
+    # ICMP 与 HTTP 回退必须同族,否则会出现 ICMP 走 v6 全丢、延迟却取 v4 回退值的混合结果
+    PROBE_AF=""
+    if [ "\\$PING4_OK" = "1" ] && [ "\\$IPV4" = "1" ]; then PROBE_AF="-4"; fi
 
     if [ "\\$ICMP_OK" = "1" ]; then
       icmp_probe "\\$CT_NODE" ct &
