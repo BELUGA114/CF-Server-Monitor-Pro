@@ -2,6 +2,32 @@
 
 >fork 自 [CF-Server-Monitor-Pro](https://github.com/a63414262/CF-Server-Monitor-Pro)
 
+## 开发结构与验证
+
+项目使用原生 JavaScript 模块，仍通过 `src/index.js` 部署为一个 Worker，D1 绑定为 `DB`。Wrangler 负责打包，无需额外构建步骤。
+
+- `src/index.js`：请求分发。
+- `src/auth.js`：HTTP Basic 认证。
+- `src/routes/`：公开页面、后台 API、指标上报、Telegram Webhook 和安装脚本路由。
+- `src/db/`：D1 schema 初始化与节点、配置的数据库读写。
+- `src/services/`：节点管理、配置、指标与历史序列、流量统计、告警及 Telegram 管理。
+- `src/pages/`：页面渲染；`components/`、`styles/`、`scripts/` 分别保存共用组件、样式和浏览器脚本模板。
+- `src/agents/`：Linux / Alpine、Windows 安装脚本生成与 Base64 包装。
+- `src/assets/`：内置图标。
+
+修改配置或指标字段时，同时检查数据库、路由、页面及 Agent 的相关读写路径。安装脚本仍通过 Base64 包装下发，动态配置协议与已有历史数据格式保持兼容。根目录 `workers.js` 为历史副本，不作为部署入口。
+
+本地验证：
+
+```bash
+node --check src/index.js
+node --test tests/*.test.mjs
+npm exec -- wrangler deploy --dry-run
+npm exec -- wrangler dev
+```
+
+测试使用 Node 内置测试运行器，不需要额外依赖。页面与 Agent 改动还应在本地 Worker 覆盖认证、节点管理、上报、详情页及安装脚本关键流程。
+
 ## 快速部署与使用
 
 本项目提供 Deploy 按钮与 Wrangler CLI 两种部署方式。两种方式都会创建或绑定名为 `DB` 的 D1 数据库，并要求设置 `API_SECRET`；该密钥同时用于后台登录和 Agent 上报
